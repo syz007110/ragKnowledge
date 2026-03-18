@@ -1,0 +1,33 @@
+{
+  "name": "mknowledge-backend",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "cluster": "node src/cluster/smartCluster.js",
+    "start:cluster": "node src/cluster/smartCluster.js",
+    "cluster:dev": "nodemon src/cluster/smartCluster.js",
+    "worker": "node src/workers/queueProcessor.js",
+    "worker:dev": "nodemon src/workers/queueProcessor.js"
+  },
+  "dependencies": {
+    "axios": "^1.13.6",
+    "bull": "^4.12.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "mammoth": "^1.12.0",
+    "multer": "^2.1.1",
+    "mysql2": "^3.6.5",
+    "pg": "^8.20.0",
+    "pg-hstore": "^2.3.4",
+    "redis": "^4.6.10",
+    "sequelize": "^6.35.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}

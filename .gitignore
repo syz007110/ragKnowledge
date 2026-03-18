@@ -1,0 +1,33 @@
+node_modules
+/backend/uploads
+/backend/node_modules
+/frontend/node_modules
+*.md
+.env
+/infrastructure
+/.cursor
+/.vscode
+docker-compose.yml
+/example
+/deploy
+# 依赖与构建
+backend/node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-web/
+frontend/dist-mobile/
+*.log
+
+# 运行时数据
+data/
+backend/uploads/
+backend/logs/
+backend/tmp/
+npm-debug.log*
+
+# 环境变量
+*.env
+
+# 系统文件
+.DS_Store
+Thumbs.db

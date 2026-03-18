@@ -1,0 +1,25 @@
+{
+  "name": "mknowledge-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "serve": "cross-env VUE_APP_TARGET=web vue-cli-service serve --port 8081",
+    "dev": "cross-env VUE_APP_TARGET=web vue-cli-service serve --port 8081",
+    "build": "cross-env VUE_APP_TARGET=web vue-cli-service build"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.1.0",
+    "@icon-park/vue-next": "^1.4.2",
+    "axios": "^1.4.0",
+    "element-plus": "^2.3.8",
+    "vue": "^3.3.4",
+    "vue-i18n": "^11.3.0",
+    "vue-router": "^4.2.4"
+  },
+  "devDependencies": {
+    "@vue/cli-plugin-babel": "^5.0.8",
+    "@vue/cli-service": "^5.0.8",
+    "@vue/compiler-sfc": "^3.3.4",
+    "cross-env": "^10.1.0"
+  }
+}
