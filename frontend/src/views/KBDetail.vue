@@ -66,11 +66,11 @@
           <el-table-column :label="t('detail.indexStatus')" width="128" min-width="100">
             <template #default="{ row }">
               <div class="index-status">
-                <div class="index-item" :class="row.status">
+                <div class="index-item" :class="row.esIndexStatus">
                   <span class="index-dot" />
                   <span class="index-label">ES_IDX</span>
                 </div>
-                <div class="index-item" :class="row.status">
+                <div class="index-item" :class="row.vectorIndexStatus">
                   <span class="index-dot" />
                   <span class="index-label">VEC_IDX</span>
                 </div>
@@ -146,10 +146,17 @@ async function loadCollectionMeta() {
   }
 }
 
-function mapStatus(status) {
-  if (status === 'ready') return { type: 'success', textKey: 'detail.statusReady' };
-  if (String(status || '').includes('failed') || status === 'file_error') return { type: 'failed', textKey: 'detail.statusFailed' };
-  return { type: 'processing', textKey: null };
+function mapDisplayStatus(displayStatus) {
+  if (displayStatus === 'ready') return { type: 'success', textKey: 'detail.statusReady' };
+  if (displayStatus === 'failed') return { type: 'failed', textKey: 'detail.statusFailed' };
+  if (displayStatus === 'waiting') return { type: 'waiting', textKey: 'detail.statusWaiting' };
+  return { type: 'processing', textKey: 'detail.statusProcessing' };
+}
+
+function mapIndexStatus(status) {
+  if (status === 'done') return 'success';
+  if (status === 'failed') return 'failed';
+  return 'processing';
 }
 
 async function loadFiles() {
@@ -160,7 +167,7 @@ async function loadFiles() {
     sortOrder: 'DESC'
   });
   docs.value = (response.data?.items || []).map((item) => {
-    const statusInfo = mapStatus(item.status);
+    const statusInfo = mapDisplayStatus(item.displayStatus);
     return {
       id: item.id,
       name: item.fileName,
@@ -168,7 +175,9 @@ async function loadFiles() {
       uploadedAt: String(item.createdAt || '').slice(0, 19).replace('T', ' '),
       status: statusInfo.type,
       statusText: statusInfo.textKey ? t(statusInfo.textKey) : (item.status || '-'),
-      statusDisplayText: statusInfo.textKey ? t(statusInfo.textKey) : (item.status || '-')
+      statusDisplayText: statusInfo.textKey ? t(statusInfo.textKey) : (item.status || '-'),
+      esIndexStatus: mapIndexStatus(item.indexSummary?.esStatus),
+      vectorIndexStatus: mapIndexStatus(item.indexSummary?.vectorStatus)
     };
   });
   total.value = Number(response.data?.total || 0);
@@ -555,6 +564,12 @@ watch(() => route.params.id, () => {
   color: #9a6700;
   background: #fff8dc;
   border: 1px solid #f6e1a4;
+}
+
+.status-tag.waiting {
+  color: #6a7282;
+  background: #f3f4f6;
+  border: 0.8px solid #d1d5dc;
 }
 
 .index-status {

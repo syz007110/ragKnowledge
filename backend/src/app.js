@@ -47,6 +47,13 @@ app.use((error, req, res, next) => {
       detail: process.env.NODE_ENV === 'production' ? undefined : errorMessage
     });
   }
+  if (errorMessage.startsWith('kb.es.deleteSyncFailed')) {
+    return res.status(502).json({
+      messageKey: 'kb.es.deleteSyncFailed',
+      message: req.t ? req.t('kb.es.deleteSyncFailed') : 'ES delete synchronization failed',
+      detail: process.env.NODE_ENV === 'production' ? undefined : errorMessage
+    });
+  }
   if (error?.code === 'LIMIT_FILE_SIZE' || error?.code === 'LIMIT_FILE_COUNT') {
     return res.status(400).json({
       messageKey: 'kb.uploadLimitExceeded',

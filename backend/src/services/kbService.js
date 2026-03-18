@@ -3,7 +3,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const { Op } = require('sequelize');
 const axios = require('axios');
-const { kbIngestQueue } = require('../config/queue');
+const { kbIngestQueue, kbPurgeQueue } = require('../config/queue');
 const {
   sequelize,
   KbCollection,
@@ -20,6 +20,8 @@ const {
 const SUPPORTED_EXTS = ['md', 'txt', 'docx'];
 const MAX_COLLECTION_TAGS = 5;
 const MAX_TAG_LENGTH = 10;
+const RECYCLE_RETENTION_DAYS = 30;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const PUNCTUATION_MAP = {
   '，': ',',
   '。': '.',
@@ -49,6 +51,15 @@ function sha256(value) {
 
 function getOperatorId(user) {
   return user?.id || user?.userId || null;
+}
+
+function getRecycleCutoffDate(now = new Date()) {
+  return new Date(now.getTime() - RECYCLE_RETENTION_DAYS * MS_PER_DAY);
+}
+
+function withinRecycleWindow(date, now = new Date()) {
+  if (!date) return false;
+  return new Date(date).getTime() >= getRecycleCutoffDate(now).getTime();
 }
 
 function normalizeFileExt(name, ext) {
@@ -197,7 +208,7 @@ async function getCollectionTagMap(collectionIds) {
   return map;
 }
 
-function splitTextToChunks(text, maxChunkSize = 800) {
+function splitPlainTextToChunks(text, maxChunkSize = 800) {
   const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
   if (!normalized) return [];
 
@@ -239,6 +250,224 @@ function splitTextToChunks(text, maxChunkSize = 800) {
   }
 
   return chunks;
+}
+
+function splitLongParagraph(text, maxChunkSize) {
+  const value = String(text || '').trim();
+  if (!value) return [];
+  if (value.length <= maxChunkSize) return [value];
+
+  const sentenceParts = value
+    .split(/(?<=[。！？；.!?;])(?=\S)/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (!sentenceParts.length) {
+    const pieces = [];
+    for (let index = 0; index < value.length; index += maxChunkSize) {
+      pieces.push(value.slice(index, index + maxChunkSize));
+    }
+    return pieces;
+  }
+
+  const chunks = [];
+  let buffer = '';
+  sentenceParts.forEach((part) => {
+    if (!buffer) {
+      buffer = part;
+      return;
+    }
+    if ((buffer.length + part.length) <= maxChunkSize) {
+      buffer += part;
+      return;
+    }
+    chunks.push(buffer);
+    buffer = part;
+  });
+  if (buffer) chunks.push(buffer);
+  return chunks;
+}
+
+function parseMarkdownHeading(paragraph) {
+  const line = String(paragraph || '').trim();
+  if (!line) return null;
+
+  const markdownMatch = line.match(/^(#{1,6})\s+(.+)$/);
+  if (markdownMatch) {
+    return {
+      level: markdownMatch[1].length,
+      label: `${markdownMatch[1]} ${markdownMatch[2].trim()}`
+    };
+  }
+
+  const numericMatch = line.match(/^(\d+(?:\.\d+){0,5})[.、]?\s+(.+)$/);
+  if (numericMatch) {
+    const order = numericMatch[1];
+    return {
+      level: Math.max(1, order.split('.').length),
+      label: `${order} ${numericMatch[2].trim()}`
+    };
+  }
+
+  const chapterMatch = line.match(/^(第[一二三四五六七八九十百千万零〇0-9]+[章节篇部])\s*(.*)$/);
+  if (chapterMatch) {
+    return {
+      level: 1,
+      label: `${chapterMatch[1]} ${String(chapterMatch[2] || '').trim()}`.trim()
+    };
+  }
+
+  const chineseMatch = line.match(/^([一二三四五六七八九十百千万零〇]+)[、.．]\s*(.+)$/);
+  if (chineseMatch) {
+    return {
+      level: 1,
+      label: `${chineseMatch[1]}、${chineseMatch[2].trim()}`
+    };
+  }
+
+  const nestedChineseMatch = line.match(/^[（(]([一二三四五六七八九十百千万零〇0-9]+)[)）]\s*(.+)$/);
+  if (nestedChineseMatch) {
+    return {
+      level: 2,
+      label: `(${nestedChineseMatch[1]}) ${nestedChineseMatch[2].trim()}`
+    };
+  }
+
+  return null;
+}
+
+function updateHeadingPath(stack, heading) {
+  const safeLevel = Math.max(1, Number(heading.level) || 1);
+  while (stack.length >= safeLevel) {
+    stack.pop();
+  }
+  stack.push(heading.label);
+  return [...stack];
+}
+
+function splitMarkdownToChunks(text, maxChunkSize = 800) {
+  const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
+  if (!normalized) return [];
+
+  const paragraphs = normalized
+    .split(/\n{2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (!paragraphs.length) return [];
+
+  const headingStack = [];
+  const atomicUnits = [];
+  let pendingHeadingUnit = null;
+
+  paragraphs.forEach((paragraph) => {
+    const heading = parseMarkdownHeading(paragraph);
+    if (heading) {
+      if (pendingHeadingUnit) {
+        atomicUnits.push(pendingHeadingUnit);
+      }
+      pendingHeadingUnit = {
+        parts: [paragraph],
+        headingPath: updateHeadingPath(headingStack, heading)
+      };
+      return;
+    }
+
+    if (pendingHeadingUnit) {
+      pendingHeadingUnit.parts.push(paragraph);
+      atomicUnits.push(pendingHeadingUnit);
+      pendingHeadingUnit = null;
+      return;
+    }
+
+    atomicUnits.push({
+      parts: [paragraph],
+      headingPath: [...headingStack]
+    });
+  });
+
+  if (pendingHeadingUnit) {
+    atomicUnits.push(pendingHeadingUnit);
+  }
+
+  // Split only when a single non-heading paragraph itself is too long.
+  const atomicSegments = [];
+  atomicUnits.forEach((unit) => {
+    const joined = unit.parts.join('\n\n');
+    if (joined.length <= maxChunkSize) {
+      atomicSegments.push({
+        text: joined,
+        headingPath: unit.headingPath
+      });
+      return;
+    }
+
+    if (unit.parts.length === 1) {
+      splitLongParagraph(unit.parts[0], maxChunkSize).forEach((piece) => {
+        atomicSegments.push({
+          text: piece,
+          headingPath: unit.headingPath
+        });
+      });
+      return;
+    }
+
+    // Keep heading + first body paragraph bound even if oversized.
+    atomicSegments.push({
+      text: joined,
+      headingPath: unit.headingPath
+    });
+  });
+
+  const merged = [];
+  atomicSegments.forEach((segment) => {
+    if (!merged.length) {
+      merged.push({
+        text: segment.text,
+        headingPath: segment.headingPath
+      });
+      return;
+    }
+
+    const prev = merged[merged.length - 1];
+    const prevPathKey = JSON.stringify(prev.headingPath || []);
+    const currentPathKey = JSON.stringify(segment.headingPath || []);
+    const canMerge =
+      prevPathKey === currentPathKey &&
+      (prev.text.length + 2 + segment.text.length) <= maxChunkSize;
+
+    if (!canMerge) {
+      merged.push({
+        text: segment.text,
+        headingPath: segment.headingPath
+      });
+      return;
+    }
+
+    prev.text = `${prev.text}\n\n${segment.text}`;
+  });
+
+  const chunks = [];
+  let start = 0;
+  merged.forEach((item) => {
+    chunks.push({
+      text: item.text,
+      headingPath: item.headingPath || [],
+      startOffset: start,
+      endOffset: start + item.text.length
+    });
+    start += item.text.length;
+  });
+
+  return chunks;
+}
+
+function splitTextToChunks(text, { fileExt = '', maxChunkSize = 800 } = {}) {
+  const ext = String(fileExt || '').toLowerCase();
+  if (ext === 'md') {
+    return splitMarkdownToChunks(text, maxChunkSize);
+  }
+  return splitPlainTextToChunks(text, maxChunkSize);
 }
 
 function cleanTextByType(rawText, fileExt) {
@@ -326,6 +555,33 @@ async function syncChunkToEs({ file, chunk, tags }) {
   const auth = config.username ? { username: config.username, password: config.password } : undefined;
   await axios.put(url, payload, { auth, timeout: Number(process.env.ES_TIMEOUT_MS || 20000) });
   return { skipped: false, esDocId: String(chunk.id) };
+}
+
+async function deleteEsDocsByQuery({ collectionId = null, fileId = null } = {}) {
+  const config = buildEsConfig();
+  if (!config.enabled) {
+    return { skipped: true };
+  }
+  ensureConfig(config, ['baseUrl', 'indexName'], 'es');
+  const filters = [];
+  if (Number.isFinite(Number(collectionId)) && Number(collectionId) > 0) {
+    filters.push({ term: { collection_id: Number(collectionId) } });
+  }
+  if (Number.isFinite(Number(fileId)) && Number(fileId) > 0) {
+    filters.push({ term: { file_id: Number(fileId) } });
+  }
+  if (!filters.length) return { skipped: true };
+
+  const url = `${config.baseUrl}/${encodeURIComponent(config.indexName)}/_delete_by_query?conflicts=proceed&refresh=true`;
+  const auth = config.username ? { username: config.username, password: config.password } : undefined;
+  await axios.post(url, {
+    query: {
+      bool: {
+        filter: filters
+      }
+    }
+  }, { auth, timeout: Number(process.env.ES_TIMEOUT_MS || 20000) });
+  return { skipped: false };
 }
 
 function resolveRagflowDatasetId(collection) {
@@ -642,6 +898,12 @@ async function deleteCollection({ id, user }) {
   });
   if (!collection) return null;
   try {
+    await deleteEsDocsByQuery({ collectionId: collection.id });
+  } catch (error) {
+    error.message = `kb.es.deleteSyncFailed:${error.message}`;
+    throw error;
+  }
+  try {
     await deleteRagflowDataset(resolveRagflowDatasetId(collection));
   } catch (error) {
     error.message = `kb.ragflow.datasetSyncFailed:${error.message}`;
@@ -666,6 +928,473 @@ async function deleteCollection({ id, user }) {
     });
   });
   return collection;
+}
+
+async function listRecycleBinItems({ keyword = '' } = {}) {
+  const cutoff = getRecycleCutoffDate();
+  const key = String(keyword || '').trim();
+  const whereCollection = {
+    isDeleted: 1,
+    deletedAt: {
+      [Op.gte]: cutoff
+    }
+  };
+  const whereFile = {
+    isDeleted: 1,
+    deletedAt: {
+      [Op.gte]: cutoff
+    }
+  };
+  if (key) {
+    whereCollection.name = { [Op.like]: `%${key}%` };
+  }
+
+  const deletedCollections = await KbCollection.findAll({
+    where: whereCollection,
+    order: [['deletedAt', 'DESC']]
+  });
+  const deletedCollectionIds = deletedCollections.map((item) => item.id);
+  if (!deletedCollectionIds.length) {
+    return {
+      retentionDays: RECYCLE_RETENTION_DAYS,
+      items: []
+    };
+  }
+
+  whereFile.collectionId = {
+    [Op.in]: deletedCollectionIds
+  };
+  if (key) {
+    whereFile.fileName = { [Op.like]: `%${key}%` };
+  }
+
+  const deletedFiles = await KbFile.findAll({
+    where: whereFile,
+    order: [['deletedAt', 'DESC']]
+  });
+
+  const groupedFileMap = new Map();
+  deletedFiles.forEach((file) => {
+    if (!groupedFileMap.has(file.collectionId)) groupedFileMap.set(file.collectionId, []);
+    groupedFileMap.get(file.collectionId).push({
+      id: file.id,
+      collectionId: file.collectionId,
+      fileName: file.fileName,
+      fileExt: file.fileExt,
+      deletedAt: file.deletedAt,
+      canRestore: false
+    });
+  });
+
+  const items = [];
+  deletedCollections.forEach((collection) => {
+    const collectionId = collection.id;
+    const files = groupedFileMap.get(collectionId) || [];
+    files.forEach((file) => { file.canRestore = false; });
+    items.push({
+      id: collection.id,
+      name: collection.name,
+      isDeleted: true,
+      deletedAt: collection.deletedAt,
+      canRestore: withinRecycleWindow(collection.deletedAt),
+      fileCount: files.length,
+      files
+    });
+  });
+
+  items.sort((a, b) => {
+    const aTime = a.deletedAt ? new Date(a.deletedAt).getTime() : 0;
+    const bTime = b.deletedAt ? new Date(b.deletedAt).getTime() : 0;
+    return bTime - aTime;
+  });
+
+  return {
+    retentionDays: RECYCLE_RETENTION_DAYS,
+    items
+  };
+}
+
+async function restoreRecycleItems({ collectionIds = [], fileIds = [], user, locale }) {
+  const operatorId = getOperatorId(user);
+  const now = new Date();
+  const uniqueCollectionIds = Array.from(new Set((collectionIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
+  const uniqueFileIds = Array.from(new Set((fileIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
+  if (uniqueFileIds.length && !uniqueCollectionIds.length) {
+    throw new Error('kb.recycle.collectionNotRestored');
+  }
+
+  const restoredResult = await sequelize.transaction(async (transaction) => {
+    const restored = {
+      collectionCount: 0,
+      fileCount: 0,
+      restoredCollectionIds: [],
+      restoredFileIds: []
+    };
+
+    if (uniqueCollectionIds.length) {
+      const collections = await KbCollection.findAll({
+        where: {
+          id: { [Op.in]: uniqueCollectionIds },
+          isDeleted: 1
+        },
+        transaction
+      });
+      const validCollectionIds = collections
+        .filter((item) => withinRecycleWindow(item.deletedAt, now))
+        .map((item) => item.id);
+      if (validCollectionIds.length) {
+        const filesToRestore = await KbFile.findAll({
+          where: {
+            collectionId: { [Op.in]: validCollectionIds },
+            isDeleted: 1
+          },
+          attributes: ['id'],
+          transaction
+        });
+        await KbCollection.update({
+          isDeleted: 0,
+          deletedAt: null,
+          updatedBy: operatorId
+        }, {
+          where: { id: { [Op.in]: validCollectionIds } },
+          transaction
+        });
+        await KbFile.update({
+          isDeleted: 0,
+          deletedAt: null,
+          updatedBy: operatorId
+        }, {
+          where: {
+            collectionId: { [Op.in]: validCollectionIds },
+            isDeleted: 1
+          },
+          transaction
+        });
+        restored.collectionCount = validCollectionIds.length;
+        restored.restoredCollectionIds.push(...validCollectionIds);
+        restored.restoredFileIds.push(...filesToRestore.map((item) => item.id));
+      }
+    }
+
+    if (uniqueFileIds.length) {
+      const files = await KbFile.findAll({
+        where: {
+          id: { [Op.in]: uniqueFileIds },
+          isDeleted: 1
+        },
+        transaction
+      });
+      const collectionIdsOfFiles = Array.from(new Set(files.map((item) => item.collectionId)));
+      const collections = await KbCollection.findAll({
+        where: {
+          id: { [Op.in]: collectionIdsOfFiles }
+        },
+        transaction
+      });
+      const collectionMap = new Map(collections.map((item) => [item.id, item]));
+
+      const restorableFileIds = [];
+      files.forEach((file) => {
+        if (!withinRecycleWindow(file.deletedAt, now)) return;
+        const parent = collectionMap.get(file.collectionId);
+        if (!parent || Number(parent.isDeleted) === 1) {
+          throw new Error('kb.recycle.collectionNotRestored');
+        }
+        restorableFileIds.push(file.id);
+      });
+
+      if (restorableFileIds.length) {
+        await KbFile.update({
+          isDeleted: 0,
+          deletedAt: null,
+          updatedBy: operatorId
+        }, {
+          where: { id: { [Op.in]: restorableFileIds } },
+          transaction
+        });
+        restored.fileCount = restorableFileIds.length;
+        restored.restoredFileIds.push(...restorableFileIds);
+      }
+    }
+
+    return restored;
+  });
+
+  const uniqueRestoredCollectionIds = Array.from(new Set(restoredResult.restoredCollectionIds));
+  const uniqueRestoredFileIds = Array.from(new Set(restoredResult.restoredFileIds));
+  const collectionMap = new Map();
+
+  for (const collectionId of uniqueRestoredCollectionIds) {
+    const collection = await KbCollection.findByPk(collectionId);
+    if (!collection) continue;
+    try {
+      const ragflowResult = await createRagflowDataset({
+        name: collection.name,
+        description: collection.description || ''
+      });
+      if (!ragflowResult.skipped && ragflowResult.datasetId) {
+        await collection.update({
+          ragflowDatasetId: ragflowResult.datasetId
+        });
+      }
+    } catch (error) {
+      error.message = `kb.ragflow.datasetSyncFailed:${error.message}`;
+      throw error;
+    }
+    collectionMap.set(collection.id, collection);
+  }
+
+  for (const fileId of uniqueRestoredFileIds) {
+    const file = await KbFile.findByPk(fileId);
+    if (!file) continue;
+    let collection = collectionMap.get(file.collectionId);
+    if (!collection) {
+      collection = await KbCollection.findByPk(file.collectionId);
+      if (collection) collectionMap.set(collection.id, collection);
+    }
+    if (!collection) continue;
+    try {
+      const ragflowResult = await uploadRagflowDocument({
+        datasetId: resolveRagflowDatasetId(collection),
+        storageUri: file.storageUri,
+        fileName: file.fileName
+      });
+      await file.update({
+        ragflowDocumentId: ragflowResult.documentId || null,
+        status: 'uploaded',
+        errorMessage: null,
+        errorMessageKey: null,
+        updatedBy: operatorId
+      });
+    } catch (error) {
+      error.message = `kb.ragflow.documentSyncFailed:${error.message}`;
+      throw error;
+    }
+  }
+
+  let rebuildQueuedCount = 0;
+  for (const fileId of uniqueRestoredFileIds) {
+    const result = await rebuildFile({
+      id: fileId,
+      user,
+      locale
+    });
+    if (result) rebuildQueuedCount += 1;
+  }
+
+  return {
+    collectionCount: restoredResult.collectionCount,
+    fileCount: uniqueRestoredFileIds.length,
+    rebuildQueuedCount
+  };
+}
+
+function queueByName(queueName) {
+  if (queueName === 'kb-purge') return kbPurgeQueue;
+  return kbIngestQueue;
+}
+
+async function submitRecyclePurgeJobs({ collectionIds = [], fileIds = [], user, locale }) {
+  const now = new Date();
+  const operatorId = getOperatorId(user);
+  const uniqueCollectionIds = Array.from(new Set((collectionIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
+  const uniqueFileIds = Array.from(new Set((fileIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
+
+  const jobs = [];
+  if (uniqueCollectionIds.length) {
+    const collections = await KbCollection.findAll({
+      where: {
+        id: { [Op.in]: uniqueCollectionIds },
+        isDeleted: 1
+      }
+    });
+    collections.forEach((collection) => {
+      if (!withinRecycleWindow(collection.deletedAt, now)) return;
+      jobs.push({
+        bizType: 'collection',
+        bizId: collection.id
+      });
+    });
+  }
+  if (uniqueFileIds.length) {
+    const files = await KbFile.findAll({
+      where: {
+        id: { [Op.in]: uniqueFileIds },
+        isDeleted: 1
+      }
+    });
+    files.forEach((file) => {
+      if (!withinRecycleWindow(file.deletedAt, now)) return;
+      jobs.push({
+        bizType: 'file',
+        bizId: file.id
+      });
+    });
+  }
+
+  const createdJobs = [];
+  for (const jobItem of jobs) {
+    const idempotencyKey = `purge:${jobItem.bizType}:${jobItem.bizId}:${Date.now()}:${Math.round(Math.random() * 1000)}`;
+    const jobRecord = await KbJob.create({
+      jobType: 'purge',
+      bizType: jobItem.bizType,
+      bizId: jobItem.bizId,
+      idempotencyKey,
+      queueName: 'kb-purge',
+      payloadJson: {
+        locale
+      },
+      status: 'queued',
+      createdBy: operatorId
+    });
+    const queueJob = await kbPurgeQueue.add(
+      'purge-kb',
+      {
+        kbJobId: jobRecord.id,
+        bizType: jobItem.bizType,
+        bizId: jobItem.bizId,
+        locale,
+        operatorId
+      },
+      {
+        jobId: `kb-purge-${jobItem.bizType}-${jobItem.bizId}-job-${jobRecord.id}`
+      }
+    );
+    await jobRecord.update({
+      payloadJson: {
+        ...(jobRecord.payloadJson || {}),
+        queueJobId: queueJob.id
+      }
+    });
+    createdJobs.push(jobRecord);
+  }
+  return createdJobs;
+}
+
+function resolveLocalPath(storageUri = '') {
+  const value = String(storageUri || '');
+  if (!value) return '';
+  if (value.startsWith('file://')) return value.replace('file://', '');
+  if (value.startsWith('kb://')) return '';
+  return path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
+}
+
+async function safeDeleteLocalFile(storageUri = '') {
+  const localPath = resolveLocalPath(storageUri);
+  if (!localPath) return;
+  await fs.unlink(localPath).catch(() => null);
+}
+
+async function hardDeleteFileById({ fileId, transaction }) {
+  const file = await KbFile.findByPk(fileId, { transaction });
+  if (!file) return false;
+
+  const chunks = await KbChunk.findAll({
+    where: { fileId: file.id },
+    attributes: ['id'],
+    transaction
+  });
+  const chunkIds = chunks.map((item) => item.id);
+  if (chunkIds.length) {
+    await KbChunkIndexState.destroy({
+      where: {
+        chunkId: { [Op.in]: chunkIds }
+      },
+      transaction
+    });
+    await sequelize.query('DELETE FROM kb_chunk_asset WHERE chunk_id IN (:chunkIds)', {
+      replacements: { chunkIds },
+      transaction
+    });
+  }
+  await KbChunk.destroy({ where: { fileId: file.id }, transaction });
+  await KbFileLineage.destroy({
+    where: {
+      [Op.or]: [
+        { sourceFileId: file.id },
+        { derivedFileId: file.id }
+      ]
+    },
+    transaction
+  });
+  await sequelize.query('DELETE FROM kb_asset_ocr WHERE asset_id IN (SELECT id FROM kb_asset WHERE file_id = :fileId)', {
+    replacements: { fileId: file.id },
+    transaction
+  });
+  await sequelize.query('DELETE FROM kb_asset WHERE file_id = :fileId', {
+    replacements: { fileId: file.id },
+    transaction
+  });
+  await KbFile.destroy({
+    where: { id: file.id },
+    transaction
+  });
+  await safeDeleteLocalFile(file.storageUri);
+  return true;
+}
+
+async function executeRecyclePurgeJob({ kbJobId }) {
+  const job = await KbJob.findByPk(Number(kbJobId));
+  if (!job) {
+    throw new Error('kb.jobNotFound');
+  }
+  await job.update({
+    status: 'processing',
+    lastError: null,
+    lastErrorKey: null
+  });
+  try {
+    if (job.bizType === 'file') {
+      await sequelize.transaction(async (transaction) => {
+        await hardDeleteFileById({
+          fileId: job.bizId,
+          transaction
+        });
+      });
+    } else if (job.bizType === 'collection') {
+      await sequelize.transaction(async (transaction) => {
+        const files = await KbFile.findAll({
+          where: { collectionId: job.bizId },
+          attributes: ['id'],
+          transaction
+        });
+        for (const file of files) {
+          await hardDeleteFileById({
+            fileId: file.id,
+            transaction
+          });
+        }
+        await KbCollectionTag.destroy({
+          where: { collectionId: job.bizId },
+          transaction
+        });
+        await KbCollection.destroy({
+          where: { id: job.bizId },
+          transaction
+        });
+      });
+    } else {
+      throw new Error('kb.recycle.unsupportedBizType');
+    }
+
+    await job.update({
+      status: 'done',
+      lastError: null,
+      lastErrorKey: null
+    });
+    return {
+      kbJobId: job.id,
+      bizType: job.bizType,
+      bizId: job.bizId
+    };
+  } catch (error) {
+    await job.update({
+      status: 'failed',
+      lastErrorKey: 'kb.recycle.purgeFailed',
+      lastError: error.message
+    });
+    throw error;
+  }
 }
 
 async function listCollectionFiles({ collectionId, status, fileType }) {
@@ -718,8 +1447,116 @@ async function listCollectionFilesPaged({
     offset: (safePage - 1) * safePageSize,
     limit: safePageSize
   });
+  const rows = result.rows || [];
+  const fileIds = rows.map((item) => item.id);
+
+  const latestJobStatusMap = new Map();
+  if (fileIds.length) {
+    const jobs = await KbJob.findAll({
+      where: {
+        bizType: 'file',
+        bizId: {
+          [Op.in]: fileIds
+        }
+      },
+      attributes: ['bizId', 'status', 'createdAt'],
+      order: [['createdAt', 'DESC']]
+    });
+    jobs.forEach((job) => {
+      const key = String(job.bizId);
+      if (!latestJobStatusMap.has(key)) {
+        latestJobStatusMap.set(key, job.status);
+      }
+    });
+  }
+
+  const indexSummaryMap = new Map();
+  if (fileIds.length) {
+    const chunkRows = await KbChunk.findAll({
+      where: {
+        fileId: {
+          [Op.in]: fileIds
+        }
+      },
+      attributes: ['id', 'fileId'],
+      include: [
+        {
+          model: KbChunkIndexState,
+          as: 'indexState',
+          required: false,
+          attributes: ['esStatus', 'vectorStatus']
+        }
+      ]
+    });
+    chunkRows.forEach((chunk) => {
+      const key = String(chunk.fileId);
+      if (!indexSummaryMap.has(key)) {
+        indexSummaryMap.set(key, {
+          total: 0,
+          esDone: 0,
+          esFailed: 0,
+          vectorDone: 0,
+          vectorFailed: 0,
+          esStatus: 'pending',
+          vectorStatus: 'pending'
+        });
+      }
+      const bucket = indexSummaryMap.get(key);
+      bucket.total += 1;
+      const esStatus = chunk.indexState?.esStatus || 'pending';
+      const vectorStatus = chunk.indexState?.vectorStatus || 'pending';
+      if (esStatus === 'done') bucket.esDone += 1;
+      if (esStatus === 'failed') bucket.esFailed += 1;
+      if (vectorStatus === 'done') bucket.vectorDone += 1;
+      if (vectorStatus === 'failed') bucket.vectorFailed += 1;
+    });
+
+    indexSummaryMap.forEach((bucket) => {
+      bucket.esStatus = bucket.total <= 0
+        ? 'pending'
+        : (bucket.esFailed > 0 ? 'failed' : (bucket.esDone >= bucket.total ? 'done' : 'pending'));
+      bucket.vectorStatus = bucket.total <= 0
+        ? 'pending'
+        : (bucket.vectorFailed > 0 ? 'failed' : (bucket.vectorDone >= bucket.total ? 'done' : 'pending'));
+    });
+  }
+
+  const enrichedRows = rows.map((item) => {
+    const plain = item.toJSON();
+    const rowKey = String(item.id);
+    const latestJobStatus = latestJobStatusMap.get(rowKey) || null;
+    const indexSummary = indexSummaryMap.get(rowKey) || {
+      total: 0,
+      esDone: 0,
+      esFailed: 0,
+      vectorDone: 0,
+      vectorFailed: 0,
+      esStatus: 'pending',
+      vectorStatus: 'pending'
+    };
+    const failedFile = String(plain.status || '').includes('failed') || plain.status === 'file_error';
+    const hasKeyChannelsReady = indexSummary.esStatus === 'done' && indexSummary.vectorStatus === 'done';
+    let displayStatus = 'processing';
+    if (failedFile || latestJobStatus === 'failed') {
+      displayStatus = 'failed';
+    } else if (latestJobStatus === 'queued' || plain.status === 'uploaded') {
+      displayStatus = 'waiting';
+    } else if (plain.status === 'ready' && hasKeyChannelsReady) {
+      displayStatus = 'ready';
+    } else if (latestJobStatus === 'processing' || ['parsing', 'indexing'].includes(String(plain.status || ''))) {
+      displayStatus = 'processing';
+    }
+
+    return {
+      ...plain,
+      latestJobStatus,
+      displayStatus,
+      indexSummary
+    };
+  });
+
   return {
-    items: result.rows,
+    items: enrichedRows,
     total: result.count,
     page: safePage,
     pageSize: safePageSize
@@ -734,6 +1571,12 @@ async function deleteFile({ id, user }) {
     }
   });
   if (!file) return null;
+  try {
+    await deleteEsDocsByQuery({ fileId: file.id });
+  } catch (error) {
+    error.message = `kb.es.deleteSyncFailed:${error.message}`;
+    throw error;
+  }
   const collection = await KbCollection.findByPk(file.collectionId);
   try {
     await deleteRagflowDocument({
@@ -1031,8 +1874,9 @@ async function getJobStatus(jobId) {
 
   if (!dbJob) return null;
   const queueJobId = dbJob.payloadJson?.queueJobId || null;
+  const queue = queueByName(dbJob.queueName);
   const queueJob = queueJobId
-    ? await kbIngestQueue.getJob(String(queueJobId)).catch(() => null)
+    ? await queue.getJob(String(queueJobId)).catch(() => null)
     : null;
 
   let queueState = null;
@@ -1072,7 +1916,7 @@ async function runIngestPipeline({ fileId, kbJobId, rawText = '' }) {
     errorMessage: null
   });
 
-  const chunks = splitTextToChunks(cleanedText);
+  const chunks = splitTextToChunks(cleanedText, { fileExt });
   if (!chunks.length) {
     await file.update({
       status: 'parse_failed',
@@ -1125,7 +1969,8 @@ async function runIngestPipeline({ fileId, kbJobId, rawText = '' }) {
         metaJson: {
           parser: fileExt === 'txt' ? 'txt_v1' : 'plain_text',
           cleaner: fileExt,
-          version: 2
+          version: 3,
+          headingPath: item.headingPath || []
         }
       })),
       { transaction }
@@ -1142,6 +1987,15 @@ async function runIngestPipeline({ fileId, kbJobId, rawText = '' }) {
   });
 
   await file.update({ status: 'indexing' });
+
+  let esBootstrapError = null;
+  try {
+    // Ensure ES behaves as "replace on rebuild/ingest" by
+    // removing previous docs for the same file before indexing new chunks.
+    await deleteEsDocsByQuery({ fileId: file.id });
+  } catch (error) {
+    esBootstrapError = error;
+  }
 
   let ragflowSession = { skipped: true, documentId: '' };
   let ragflowBootstrapError = null;
@@ -1164,6 +2018,7 @@ async function runIngestPipeline({ fileId, kbJobId, rawText = '' }) {
     if (!state) continue;
 
     try {
+      if (esBootstrapError) throw esBootstrapError;
       const esResult = await syncChunkToEs({ file, chunk, tags: uniqueTags });
       await state.update({
         esStatus: 'done',
@@ -1364,6 +2219,10 @@ module.exports = {
   getCollectionById,
   updateCollection,
   deleteCollection,
+  listRecycleBinItems,
+  restoreRecycleItems,
+  submitRecyclePurgeJobs,
+  executeRecyclePurgeJob,
   listCollectionFiles,
   listCollectionFilesPaged,
   deleteFile,

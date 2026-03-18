@@ -7,6 +7,9 @@ const {
   getCollectionItem,
   updateCollectionItem,
   deleteCollectionItem,
+  getRecycleBinItems,
+  restoreRecycleBinItems,
+  purgeRecycleBinItems,
   getCollectionFiles,
   uploadCollectionFiles,
   createIngestTask,
@@ -30,6 +33,9 @@ router.get('/collections/:id', requireKbPermission('kb:read'), getCollectionItem
 router.post('/collections', requireKbPermission('kb:upload'), createCollectionItem);
 router.put('/collections/:id', requireKbPermission('kb:upload'), updateCollectionItem);
 router.delete('/collections/:id', requireKbPermission('kb:delete'), deleteCollectionItem);
+router.get('/recycle-bin', requireKbPermission('kb:upload'), getRecycleBinItems);
+router.post('/recycle-bin/restore', requireKbPermission('kb:upload'), restoreRecycleBinItems);
+router.post('/recycle-bin/purge', requireKbPermission('kb:delete'), purgeRecycleBinItems);
 router.get('/collections/:id/files', requireKbPermission('kb:read'), getCollectionFiles);
 router.post('/collections/:id/files/upload', requireKbPermission('kb:upload'), kbUploadMiddleware, uploadCollectionFiles);
 

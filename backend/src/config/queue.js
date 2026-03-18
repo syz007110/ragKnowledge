@@ -30,6 +30,15 @@ const kbIngestQueue = new Queue('kb-ingest', {
   }
 });
 
+const kbPurgeQueue = new Queue('kb-purge', {
+  ...queueOptions,
+  defaultJobOptions: {
+    ...queueOptions.defaultJobOptions,
+    priority: Number(process.env.KB_PURGE_QUEUE_PRIORITY || 4),
+    timeout: Number(process.env.KB_PURGE_QUEUE_TIMEOUT_MS || 600000)
+  }
+});
+
 kbIngestQueue.on('error', (error) => {
   console.error('[KB队列] 队列错误:', error.message);
 });
@@ -42,8 +51,21 @@ kbIngestQueue.on('completed', (job) => {
   console.log(`[KB队列] 任务完成: ${job.id}`);
 });
 
+kbPurgeQueue.on('error', (error) => {
+  console.error('[KB回收站队列] 队列错误:', error.message);
+});
+
+kbPurgeQueue.on('failed', (job, err) => {
+  console.error(`[KB回收站队列] 任务失败: ${job?.id}`, err?.message || err);
+});
+
+kbPurgeQueue.on('completed', (job) => {
+  console.log(`[KB回收站队列] 任务完成: ${job.id}`);
+});
+
 module.exports = {
   redisConfig,
   queueOptions,
-  kbIngestQueue
+  kbIngestQueue,
+  kbPurgeQueue
 };

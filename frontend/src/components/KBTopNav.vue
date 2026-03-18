@@ -13,6 +13,13 @@
         >
           {{ t('nav.workspace') }}
         </button>
+        <button
+          class="menu-item"
+          :class="{ active: activeTab === 'recycle' }"
+          @click="$router.push('/recycle-bin')"
+        >
+          {{ t('nav.recycleBin') }}
+        </button>
       </nav>
       <slot v-else name="breadcrumb" />
     </div>

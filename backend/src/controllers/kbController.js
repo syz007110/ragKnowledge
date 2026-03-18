@@ -4,6 +4,9 @@ const {
   getCollectionById,
   updateCollection,
   deleteCollection,
+  listRecycleBinItems,
+  restoreRecycleItems,
+  submitRecyclePurgeJobs,
   listCollectionFilesPaged,
   deleteFile,
   renameFile,
@@ -227,6 +230,64 @@ async function deleteCollectionItem(req, res, next) {
     return res.json({
       messageKey: 'common.success',
       message: req.t('common.success')
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function getRecycleBinItems(req, res, next) {
+  try {
+    const result = await listRecycleBinItems({
+      keyword: req.query.keyword || ''
+    });
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function restoreRecycleBinItems(req, res, next) {
+  try {
+    const result = await restoreRecycleItems({
+      collectionIds: req.body?.collectionIds || [],
+      fileIds: req.body?.fileIds || [],
+      user: req.user,
+      locale: req.locale
+    });
+    return res.json({
+      messageKey: 'common.success',
+      message: req.t('common.success'),
+      result
+    });
+  } catch (error) {
+    if (error.message === 'kb.recycle.collectionNotRestored') {
+      return res.status(400).json({
+        messageKey: 'kb.recycle.collectionNotRestored',
+        message: req.t('kb.recycle.collectionNotRestored')
+      });
+    }
+    return next(error);
+  }
+}
+
+async function purgeRecycleBinItems(req, res, next) {
+  try {
+    const jobs = await submitRecyclePurgeJobs({
+      collectionIds: req.body?.collectionIds || [],
+      fileIds: req.body?.fileIds || [],
+      user: req.user,
+      locale: req.locale
+    });
+    return res.status(202).json({
+      messageKey: 'kb.recycle.purgeQueued',
+      message: req.t('kb.recycle.purgeQueued'),
+      jobs: jobs.map((item) => ({
+        id: item.id,
+        bizType: item.bizType,
+        bizId: item.bizId,
+        status: item.status
+      }))
     });
   } catch (error) {
     return next(error);
@@ -542,6 +603,9 @@ module.exports = {
   getCollectionItem,
   updateCollectionItem,
   deleteCollectionItem,
+  getRecycleBinItems,
+  restoreRecycleBinItems,
+  purgeRecycleBinItems,
   getCollectionFiles,
   uploadCollectionFiles,
   createIngestTask,

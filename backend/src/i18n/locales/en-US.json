@@ -24,6 +24,11 @@
   "kb.parser.emptyText": "Parsed text is empty",
   "kb.job.processingFailed": "Job processing failed",
   "kb.index.syncFailed": "Index synchronization failed",
+  "kb.es.deleteSyncFailed": "ES index delete synchronization failed",
   "kb.ragflow.datasetSyncFailed": "RagFlow dataset synchronization failed",
-  "kb.ragflow.documentSyncFailed": "RagFlow document synchronization failed"
+  "kb.ragflow.documentSyncFailed": "RagFlow document synchronization failed",
+  "kb.recycle.collectionNotRestored": "Cannot restore file while its collection is not restored",
+  "kb.recycle.purgeQueued": "Purge jobs have been queued",
+  "kb.recycle.purgeFailed": "Recycle purge failed",
+  "kb.recycle.invalidPurgePayload": "Invalid recycle purge payload"
 }

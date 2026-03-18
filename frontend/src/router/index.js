@@ -3,6 +3,7 @@ import Login from '../views/Login.vue';
 import KBWorkspace from '../views/KBWorkspace.vue';
 import KBDetail from '../views/KBDetail.vue';
 import KBSettings from '../views/KBSettings.vue';
+import KBRecycleBin from '../views/KBRecycleBin.vue';
 import { isAuthenticated, isAdmin } from '../utils/auth';
 
 const routes = [
@@ -22,6 +23,12 @@ const routes = [
     path: '/knowledge/:id',
     name: 'kb-detail',
     component: KBDetail,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/recycle-bin',
+    name: 'kb-recycle-bin',
+    component: KBRecycleBin,
     meta: { requiresAuth: true }
   },
   {

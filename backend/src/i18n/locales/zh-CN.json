@@ -24,6 +24,11 @@
   "kb.parser.emptyText": "文件解析后内容为空",
   "kb.job.processingFailed": "任务处理失败",
   "kb.index.syncFailed": "索引同步失败",
+  "kb.es.deleteSyncFailed": "ES 索引删除同步失败",
   "kb.ragflow.datasetSyncFailed": "RagFlow 数据集同步失败",
-  "kb.ragflow.documentSyncFailed": "RagFlow 文档同步失败"
+  "kb.ragflow.documentSyncFailed": "RagFlow 文档同步失败",
+  "kb.recycle.collectionNotRestored": "所选文档所属知识集未恢复，无法恢复文档",
+  "kb.recycle.purgeQueued": "彻底删除任务已提交",
+  "kb.recycle.purgeFailed": "回收站彻底删除失败",
+  "kb.recycle.invalidPurgePayload": "回收站删除任务参数无效"
 }

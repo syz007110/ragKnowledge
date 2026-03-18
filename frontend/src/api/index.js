@@ -28,6 +28,15 @@ export default {
     deleteCollection(collectionId) {
       return http.delete(`/api/kb/collections/${collectionId}`);
     },
+    getRecycleBin(params = {}) {
+      return http.get('/api/kb/recycle-bin', { params });
+    },
+    restoreRecycleBin(payload) {
+      return http.post('/api/kb/recycle-bin/restore', payload);
+    },
+    purgeRecycleBin(payload) {
+      return http.post('/api/kb/recycle-bin/purge', payload);
+    },
     getCollectionFiles(collectionId, params = {}) {
       return http.get(`/api/kb/collections/${collectionId}/files`, { params });
     },
