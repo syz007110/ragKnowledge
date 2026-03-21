@@ -2,7 +2,7 @@ const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => sequelize.define('kbJob', {
   id: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     primaryKey: true,
     autoIncrement: true
   },
@@ -17,7 +17,7 @@ module.exports = (sequelize) => sequelize.define('kbJob', {
     field: 'biz_type'
   },
   bizId: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     allowNull: false,
     field: 'biz_id'
   },
@@ -37,13 +37,13 @@ module.exports = (sequelize) => sequelize.define('kbJob', {
     defaultValue: 5
   },
   retryCount: {
-    type: DataTypes.INTEGER.UNSIGNED,
+    type: DataTypes.INTEGER,
     allowNull: false,
     defaultValue: 0,
     field: 'retry_count'
   },
   maxAttempts: {
-    type: DataTypes.INTEGER.UNSIGNED,
+    type: DataTypes.INTEGER,
     allowNull: false,
     defaultValue: 3,
     field: 'max_attempts'
@@ -71,7 +71,7 @@ module.exports = (sequelize) => sequelize.define('kbJob', {
     field: 'last_error'
   },
   createdBy: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     field: 'created_by'
   }
 }, {

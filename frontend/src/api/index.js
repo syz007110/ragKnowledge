@@ -40,13 +40,19 @@ export default {
     getCollectionFiles(collectionId, params = {}) {
       return http.get(`/api/kb/collections/${collectionId}/files`, { params });
     },
-    uploadCollectionFiles(collectionId, formData) {
+    uploadCollectionFiles(collectionId, formData, options = {}) {
+      const timeoutMs = Number(options.timeoutMs || 0);
       return http.post(`/api/kb/collections/${collectionId}/files/upload`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: options.onUploadProgress,
+        ...(Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeout: timeoutMs } : {})
       });
     },
     createIngestTask(payload) {
       return http.post('/api/kb/ingest-tasks', payload);
+    },
+    retrievalDebug(payload) {
+      return http.post('/api/kb/retrieval/debug', payload);
     },
     getTaskStatus(taskId) {
       return http.get(`/api/kb/ingest-tasks/${taskId}`);

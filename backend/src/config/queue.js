@@ -7,6 +7,23 @@ const redisConfig = {
   db: Number(process.env.REDIS_DB || 0)
 };
 
+function parseTimeoutMs(value, fallback) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
+const DEFAULT_QUEUE_TIMEOUT_MS = 30 * 60 * 1000;
+const baseQueueTimeoutMs = parseTimeoutMs(process.env.QUEUE_TIMEOUT_MS, DEFAULT_QUEUE_TIMEOUT_MS);
+const kbIngestTimeoutMs = parseTimeoutMs(
+  process.env.KB_INGEST_QUEUE_TIMEOUT_MS || process.env.KB_QUEUE_TIMEOUT_MS,
+  baseQueueTimeoutMs
+);
+const kbPurgeTimeoutMs = parseTimeoutMs(
+  process.env.KB_PURGE_QUEUE_TIMEOUT_MS,
+  baseQueueTimeoutMs
+);
+
 const queueOptions = {
   redis: redisConfig,
   defaultJobOptions: {
@@ -17,7 +34,7 @@ const queueOptions = {
     },
     removeOnComplete: Number(process.env.QUEUE_REMOVE_ON_COMPLETE || 100),
     removeOnFail: Number(process.env.QUEUE_REMOVE_ON_FAIL || 100),
-    timeout: Number(process.env.QUEUE_TIMEOUT_MS || 600000)
+    timeout: baseQueueTimeoutMs
   }
 };
 
@@ -26,7 +43,7 @@ const kbIngestQueue = new Queue('kb-ingest', {
   defaultJobOptions: {
     ...queueOptions.defaultJobOptions,
     priority: Number(process.env.KB_QUEUE_PRIORITY || 5),
-    timeout: Number(process.env.KB_QUEUE_TIMEOUT_MS || 600000)
+    timeout: kbIngestTimeoutMs
   }
 });
 
@@ -35,7 +52,7 @@ const kbPurgeQueue = new Queue('kb-purge', {
   defaultJobOptions: {
     ...queueOptions.defaultJobOptions,
     priority: Number(process.env.KB_PURGE_QUEUE_PRIORITY || 4),
-    timeout: Number(process.env.KB_PURGE_QUEUE_TIMEOUT_MS || 600000)
+    timeout: kbPurgeTimeoutMs
   }
 });
 

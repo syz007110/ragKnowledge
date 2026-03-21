@@ -13,6 +13,7 @@ const {
   getCollectionFiles,
   uploadCollectionFiles,
   createIngestTask,
+  retrievalDebugItem,
   getTaskStatus,
   renameFileItem,
   deleteFileItem,
@@ -40,6 +41,7 @@ router.get('/collections/:id/files', requireKbPermission('kb:read'), getCollecti
 router.post('/collections/:id/files/upload', requireKbPermission('kb:upload'), kbUploadMiddleware, uploadCollectionFiles);
 
 router.post('/ingest-tasks', requireKbPermission('kb:upload'), createIngestTask);
+router.post('/retrieval/debug', requireKbPermission('kb:read'), retrievalDebugItem);
 router.get('/ingest-tasks/:id', requireKbPermission('kb:read'), getTaskStatus);
 router.get('/files/:id/download', requireKbPermission('kb:read'), downloadFileItem);
 router.put('/files/:id', requireKbPermission('kb:upload'), renameFileItem);

@@ -2,7 +2,7 @@ const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => sequelize.define('kbCollection', {
   id: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     primaryKey: true,
     autoIncrement: true
   },
@@ -33,11 +33,11 @@ module.exports = (sequelize) => sequelize.define('kbCollection', {
     field: 'is_deleted'
   },
   createdBy: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     field: 'created_by'
   },
   updatedBy: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     field: 'updated_by'
   },
   deletedAt: {

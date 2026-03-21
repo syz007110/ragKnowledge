@@ -2,12 +2,12 @@ const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => sequelize.define('kbFile', {
   id: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     primaryKey: true,
     autoIncrement: true
   },
   collectionId: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     allowNull: false,
     field: 'collection_id'
   },
@@ -26,7 +26,7 @@ module.exports = (sequelize) => sequelize.define('kbFile', {
     field: 'mime_type'
   },
   fileSize: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     allowNull: false,
     defaultValue: 0,
     field: 'file_size'
@@ -52,7 +52,7 @@ module.exports = (sequelize) => sequelize.define('kbFile', {
     field: 'upload_mode'
   },
   versionNo: {
-    type: DataTypes.INTEGER.UNSIGNED,
+    type: DataTypes.INTEGER,
     allowNull: false,
     defaultValue: 1,
     field: 'version_no'
@@ -77,11 +77,11 @@ module.exports = (sequelize) => sequelize.define('kbFile', {
     field: 'is_deleted'
   },
   createdBy: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     field: 'created_by'
   },
   updatedBy: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     field: 'updated_by'
   },
   deletedAt: {

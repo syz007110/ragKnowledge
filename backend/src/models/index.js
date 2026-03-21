@@ -4,6 +4,8 @@ const kbCollectionFactory = require('./kbCollection');
 const kbFileFactory = require('./kbFile');
 const kbFileLineageFactory = require('./kbFileLineage');
 const kbChunkFactory = require('./kbChunk');
+const kbAssetFactory = require('./kbAsset');
+const kbChunkAssetFactory = require('./kbChunkAsset');
 const kbChunkIndexStateFactory = require('./kbChunkIndexState');
 const kbJobFactory = require('./kbJob');
 const kbTagFactory = require('./kbTag');
@@ -14,6 +16,8 @@ const KbCollection = kbCollectionFactory(sequelize);
 const KbFile = kbFileFactory(sequelize);
 const KbFileLineage = kbFileLineageFactory(sequelize);
 const KbChunk = kbChunkFactory(sequelize);
+const KbAsset = kbAssetFactory(sequelize);
+const KbChunkAsset = kbChunkAssetFactory(sequelize);
 const KbChunkIndexState = kbChunkIndexStateFactory(sequelize);
 const KbJob = kbJobFactory(sequelize);
 const KbTag = kbTagFactory(sequelize);
@@ -28,6 +32,26 @@ KbChunk.belongsTo(KbFile, { foreignKey: 'file_id', as: 'file' });
 
 KbChunk.hasOne(KbChunkIndexState, { foreignKey: 'chunk_id', as: 'indexState' });
 KbChunkIndexState.belongsTo(KbChunk, { foreignKey: 'chunk_id', as: 'chunk' });
+
+KbFile.hasMany(KbAsset, { foreignKey: 'file_id', as: 'assets' });
+KbAsset.belongsTo(KbFile, { foreignKey: 'file_id', as: 'file' });
+
+KbChunk.belongsToMany(KbAsset, {
+  through: KbChunkAsset,
+  foreignKey: 'chunk_id',
+  otherKey: 'asset_id',
+  as: 'assets'
+});
+KbAsset.belongsToMany(KbChunk, {
+  through: KbChunkAsset,
+  foreignKey: 'asset_id',
+  otherKey: 'chunk_id',
+  as: 'chunks'
+});
+KbChunk.hasMany(KbChunkAsset, { foreignKey: 'chunk_id', as: 'chunkAssets' });
+KbChunkAsset.belongsTo(KbChunk, { foreignKey: 'chunk_id', as: 'chunk' });
+KbAsset.hasMany(KbChunkAsset, { foreignKey: 'asset_id', as: 'chunkAssets' });
+KbChunkAsset.belongsTo(KbAsset, { foreignKey: 'asset_id', as: 'asset' });
 
 KbCollection.hasMany(KbCollectionTag, { foreignKey: 'collection_id', as: 'collectionTags' });
 KbCollectionTag.belongsTo(KbCollection, { foreignKey: 'collection_id', as: 'collection' });
@@ -47,6 +71,8 @@ module.exports = {
   KbFile,
   KbFileLineage,
   KbChunk,
+  KbAsset,
+  KbChunkAsset,
   KbChunkIndexState,
   KbJob,
   KbTag,

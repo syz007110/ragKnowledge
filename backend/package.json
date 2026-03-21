@@ -13,6 +13,7 @@
     "worker:dev": "nodemon src/workers/queueProcessor.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.914.0",
     "axios": "^1.13.6",
     "bull": "^4.12.0",
     "cors": "^2.8.5",
@@ -24,8 +25,12 @@
     "mysql2": "^3.6.5",
     "pg": "^8.20.0",
     "pg-hstore": "^2.3.4",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^5.4.394",
     "redis": "^4.6.10",
-    "sequelize": "^6.35.0"
+    "sequelize": "^6.35.0",
+    "ws": "^8.18.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^3.0.0"

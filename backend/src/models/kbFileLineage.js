@@ -2,22 +2,22 @@ const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => sequelize.define('kbFileLineage', {
   id: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     primaryKey: true,
     autoIncrement: true
   },
   collectionId: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     allowNull: false,
     field: 'collection_id'
   },
   sourceFileId: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     allowNull: false,
     field: 'source_file_id'
   },
   derivedFileId: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     allowNull: false,
     field: 'derived_file_id'
   },
@@ -27,7 +27,7 @@ module.exports = (sequelize) => sequelize.define('kbFileLineage', {
     field: 'relation_type'
   },
   createdBy: {
-    type: DataTypes.BIGINT.UNSIGNED,
+    type: DataTypes.BIGINT,
     field: 'created_by'
   }
 }, {

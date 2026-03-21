@@ -4,12 +4,28 @@ const path = require('path');
 const { Op } = require('sequelize');
 const axios = require('axios');
 const { kbIngestQueue, kbPurgeQueue } = require('../config/queue');
+const kbStorage = require('../config/kbStorage');
+const { publishKbTaskStatus } = require('./wsEventPublisher');
+const {
+  isS3Uri,
+  deleteObjectByUri,
+  buildStorageConfig,
+  buildUploadObjectKey,
+  uploadBuffer
+} = require('./objectStorageService');
+const { createHybridRetrievalService } = require('./retrievalService');
+const { createEsLexicalProvider } = require('./lexicalProvider/esLexicalProvider');
+const { createQdrantVectorProvider } = require('./vectorProvider/qdrantProvider');
+const { createEmbeddingService } = require('./embeddingService');
+const { countIndexedStates } = require('./indexStateService');
 const {
   sequelize,
   KbCollection,
   KbFile,
   KbFileLineage,
   KbChunk,
+  KbAsset,
+  KbChunkAsset,
   KbChunkIndexState,
   KbJob,
   KbTag,
@@ -17,7 +33,7 @@ const {
   KbCollectionTag
 } = require('../models');
 
-const SUPPORTED_EXTS = ['md', 'txt', 'docx'];
+const SUPPORTED_EXTS = ['md', 'txt', 'docx', 'xlsx', 'pdf'];
 const MAX_COLLECTION_TAGS = 5;
 const MAX_TAG_LENGTH = 10;
 const RECYCLE_RETENTION_DAYS = 30;
@@ -49,6 +65,25 @@ function sha256(value) {
   return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
 }
 
+function tokenizeText(value = '') {
+  const raw = String(value || '').toLowerCase();
+  const terms = raw.match(/[\p{L}\p{N}_-]+/gu) || [];
+  return terms.filter(Boolean);
+}
+
+function safeJsonString(value) {
+  try {
+    return JSON.stringify(value || {});
+  } catch (_) {
+    return '{}';
+  }
+}
+
+function logKbVector(level, event, payload = {}) {
+  const method = typeof console[level] === 'function' ? level : 'log';
+  console[method](`[KB向量] ${event} ${safeJsonString(payload)}`);
+}
+
 function getOperatorId(user) {
   return user?.id || user?.userId || null;
 }
@@ -67,6 +102,8 @@ function normalizeFileExt(name, ext) {
   if (source.endsWith('.md') || source === 'md') return 'md';
   if (source.endsWith('.txt') || source === 'txt') return 'txt';
   if (source.endsWith('.docx') || source === 'docx') return 'docx';
+  if (source.endsWith('.xlsx') || source === 'xlsx') return 'xlsx';
+  if (source.endsWith('.pdf') || source === 'pdf') return 'pdf';
   return source.replace(/^\./, '');
 }
 
@@ -470,8 +507,167 @@ function splitTextToChunks(text, { fileExt = '', maxChunkSize = 800 } = {}) {
   return splitPlainTextToChunks(text, maxChunkSize);
 }
 
+function splitStructuredBlocksToChunks(blocks = [], maxChunkSize = 800) {
+  const safeBlocks = Array.isArray(blocks) ? blocks : [];
+  const headingStack = [];
+  const atomicSegments = [];
+  let pendingImages = [];
+
+  const attachImagesToPrevious = () => {
+    if (!pendingImages.length || !atomicSegments.length) return;
+    const prev = atomicSegments[atomicSegments.length - 1];
+    prev.assetKeys = [...(prev.assetKeys || []), ...pendingImages];
+    pendingImages = [];
+  };
+
+  safeBlocks.forEach((block) => {
+    if (!block) return;
+    if (block.type === 'image' && block.imageKey) {
+      pendingImages.push(String(block.imageKey));
+      return;
+    }
+    if (block.type === 'table_row') {
+      const rowText = String(block.rowKvText || block.text || '').trim();
+      if (!rowText) return;
+      atomicSegments.push({
+        text: rowText,
+        headingPath: [...headingStack],
+        assetKeys: pendingImages,
+        chunkType: 'table_row',
+        rowKvText: rowText,
+        sheetName: String(block.sheetName || '').trim(),
+        tableId: String(block.tableId || '').trim(),
+        rowIndex: Number(block.rowIndex || 0)
+      });
+      pendingImages = [];
+      return;
+    }
+    if (block.type === 'table_summary') {
+      const summaryText = String(block.text || '').trim();
+      if (!summaryText) return;
+      atomicSegments.push({
+        text: summaryText,
+        headingPath: [...headingStack],
+        assetKeys: pendingImages,
+        chunkType: 'table_summary',
+        rowKvText: '',
+        sheetName: String(block.sheetName || '').trim(),
+        tableId: String(block.tableId || '').trim(),
+        rowIndex: 0
+      });
+      pendingImages = [];
+      return;
+    }
+    const text = String(block.text || '').trim();
+    if (!text) return;
+    let currentHeadingPath = [...headingStack];
+    if (block.type === 'heading') {
+      const level = Math.max(1, Number(block.level) || 1);
+      while (headingStack.length >= level) headingStack.pop();
+      headingStack.push(text);
+      currentHeadingPath = [...headingStack];
+    }
+    atomicSegments.push({
+      text,
+      headingPath: currentHeadingPath,
+      assetKeys: pendingImages,
+      chunkType: block.type === 'heading' ? 'heading' : 'paragraph',
+      rowKvText: '',
+      sheetName: '',
+      tableId: '',
+      rowIndex: 0
+    });
+    pendingImages = [];
+  });
+  attachImagesToPrevious();
+
+  const expanded = [];
+  atomicSegments.forEach((segment) => {
+    if (segment.text.length <= maxChunkSize) {
+      expanded.push(segment);
+      return;
+    }
+    const pieces = splitLongParagraph(segment.text, maxChunkSize);
+    pieces.forEach((piece, idx) => {
+      expanded.push({
+        text: piece,
+        headingPath: segment.headingPath,
+        assetKeys: idx === 0 ? segment.assetKeys : [],
+        chunkType: segment.chunkType || 'paragraph',
+        rowKvText: idx === 0 ? (segment.rowKvText || '') : '',
+        sheetName: segment.sheetName || '',
+        tableId: segment.tableId || '',
+        rowIndex: segment.rowIndex || 0
+      });
+    });
+  });
+
+  const merged = [];
+  expanded.forEach((segment) => {
+    if (!merged.length) {
+      merged.push({
+        text: segment.text,
+        headingPath: segment.headingPath,
+        assetKeys: [...(segment.assetKeys || [])],
+        chunkType: segment.chunkType || 'paragraph',
+        rowKvText: segment.rowKvText || '',
+        sheetName: segment.sheetName || '',
+        tableId: segment.tableId || '',
+        rowIndex: segment.rowIndex || 0
+      });
+      return;
+    }
+    const prev = merged[merged.length - 1];
+    const canMerge =
+      safeJsonString(prev.headingPath) === safeJsonString(segment.headingPath) &&
+      String(prev.chunkType || '') === String(segment.chunkType || '') &&
+      String(segment.chunkType || '') !== 'table_row' &&
+      (prev.text.length + 2 + segment.text.length) <= maxChunkSize;
+    if (!canMerge) {
+      merged.push({
+        text: segment.text,
+        headingPath: segment.headingPath,
+        assetKeys: [...(segment.assetKeys || [])],
+        chunkType: segment.chunkType || 'paragraph',
+        rowKvText: segment.rowKvText || '',
+        sheetName: segment.sheetName || '',
+        tableId: segment.tableId || '',
+        rowIndex: segment.rowIndex || 0
+      });
+      return;
+    }
+    prev.text = `${prev.text}\n\n${segment.text}`;
+    prev.assetKeys = Array.from(new Set([...(prev.assetKeys || []), ...(segment.assetKeys || [])]));
+    if (!prev.rowKvText && segment.rowKvText) {
+      prev.rowKvText = segment.rowKvText;
+    }
+  });
+
+  const chunks = [];
+  let start = 0;
+  merged.forEach((item) => {
+    chunks.push({
+      text: item.text,
+      headingPath: item.headingPath || [],
+      assetKeys: item.assetKeys || [],
+      chunkType: item.chunkType || 'paragraph',
+      rowKvText: item.rowKvText || '',
+      sheetName: item.sheetName || '',
+      tableId: item.tableId || '',
+      rowIndex: item.rowIndex || 0,
+      startOffset: start,
+      endOffset: start + item.text.length
+    });
+    start += item.text.length;
+  });
+  return chunks;
+}
+
 function cleanTextByType(rawText, fileExt) {
-  const normalized = String(rawText || '').replace(/\r\n/g, '\n').replace(/\u0000/g, '');
+  const normalized = String(rawText || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\f/g, '\n')
+    .replace(/\u0000/g, '');
   const cleanedLines = normalized
     .split('\n')
     .map((line) => line.replace(/\s+$/g, ''))
@@ -481,6 +677,17 @@ function cleanTextByType(rawText, fileExt) {
     return cleanedLines
       .replace(/^---\n[\s\S]*?\n---\n?/u, '')
       .replace(/^(#{1,6})([^\s#])/gm, '$1 $2')
+      .trim();
+  }
+  if (fileExt === 'xlsx') {
+    return cleanedLines.trim();
+  }
+  if (fileExt === 'pdf') {
+    return cleanedLines
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n([a-zA-Z])(?=[a-zA-Z]{2,})/g, ' $1')
+      .replace(/^\s*(第?\s*\d+\s*页|page\s*\d+)\s*$/gim, '')
+      .replace(/\n{3,}/g, '\n\n')
       .trim();
   }
   if (fileExt !== 'txt') {
@@ -500,26 +707,82 @@ function buildEsConfig() {
   };
 }
 
-function buildRagflowConfig() {
-  const enabled = String(process.env.ENABLE_RAGFLOW_SYNC || 'true').toLowerCase() === 'true';
+function buildVectorSyncConfig() {
+  const qdrantEnabled = String(process.env.ENABLE_QDRANT_SYNC || 'true').toLowerCase() !== 'false';
+  const embeddingEnabled = String(process.env.ENABLE_EMBEDDING || 'true').toLowerCase() !== 'false';
+  const enabled = qdrantEnabled && embeddingEnabled;
+  const vectorSyncConcurrencyRaw = Number.parseInt(process.env.KB_VECTOR_SYNC_CONCURRENCY || '2', 10);
+  const vectorSyncConcurrency = Math.max(1, Math.min(6, Number.isFinite(vectorSyncConcurrencyRaw) ? vectorSyncConcurrencyRaw : 2));
   return {
     enabled,
-    baseUrl: String(process.env.RAGFLOW_BASE_URL || '').trim().replace(/\/+$/, ''),
-    apiKey: String(process.env.RAGFLOW_API_KEY || '').trim(),
-    fallbackDatasetId: String(process.env.RAGFLOW_DATASET_ID || '').trim(),
-    datasetPermission: String(process.env.RAGFLOW_DATASET_PERMISSION || 'me').trim() || 'me',
-    datasetChunkMethod: String(process.env.RAGFLOW_DATASET_CHUNK_METHOD || 'manual').trim() || 'manual'
+    qdrantEnabled,
+    embeddingEnabled,
+    vectorSyncConcurrency
   };
 }
 
-function getLocalPathFromStorageUri(storageUri = '') {
-  const uri = String(storageUri || '');
-  if (!uri) return '';
-  if (uri.startsWith('file://')) {
-    return uri.replace('file://', '');
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function computeBackoffDelay(attempt, baseDelayMs, maxDelayMs) {
+  const delay = baseDelayMs * (2 ** Math.max(0, attempt));
+  return Math.min(maxDelayMs, delay);
+}
+
+async function runWithBackoffRetry(executor, {
+  retries = 0,
+  baseDelayMs = 1000,
+  maxDelayMs = 10000,
+  shouldRetry = () => true,
+  onRetry = null
+} = {}) {
+  const maxAttempts = Math.max(1, Number(retries) + 1);
+  let lastError = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      return await executor(attempt);
+    } catch (error) {
+      lastError = error;
+      const reachedLast = attempt >= maxAttempts - 1;
+      if (reachedLast || !shouldRetry(error, attempt)) {
+        throw error;
+      }
+      const delay = computeBackoffDelay(
+        attempt,
+        Math.max(10, Number(baseDelayMs) || 1000),
+        Math.max(10, Number(maxDelayMs) || 10000)
+      );
+      if (typeof onRetry === 'function') {
+        try {
+          onRetry({
+            attempt,
+            nextAttempt: attempt + 1,
+            maxAttempts,
+            delayMs: delay,
+            error
+          });
+        } catch (_) {
+          // ignore logging callback errors
+        }
+      }
+      await sleep(delay);
+    }
   }
-  if (uri.startsWith('kb://')) return '';
-  return path.isAbsolute(uri) ? uri : path.resolve(process.cwd(), uri);
+  throw lastError || new Error('retry_failed');
+}
+
+async function runWithWorkerPool(items = [], concurrency = 1, worker) {
+  const queue = Array.isArray(items) ? [...items] : [];
+  const safeConcurrency = Math.max(1, Number(concurrency) || 1);
+  const workers = Array.from({ length: Math.min(safeConcurrency, queue.length) }, async () => {
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current) continue;
+      await worker(current);
+    }
+  });
+  await Promise.all(workers);
 }
 
 function ensureConfig(config, requiredFields, configName) {
@@ -542,6 +805,13 @@ async function syncChunkToEs({ file, chunk, tags }) {
     collection_id: file.collectionId,
     file_id: file.id,
     file_name: file.fileName,
+    heading_path_text: Array.isArray(chunk.metaJson?.headingPath) ? chunk.metaJson.headingPath.join(' / ') : '',
+    heading_path: Array.isArray(chunk.metaJson?.headingPath) ? chunk.metaJson.headingPath : [],
+    chunk_type: String(chunk.metaJson?.chunkType || 'paragraph'),
+    row_kv_text: String(chunk.metaJson?.rowKvText || ''),
+    sheet_name: String(chunk.metaJson?.sheetName || ''),
+    table_id: String(chunk.metaJson?.tableId || ''),
+    row_index: Number(chunk.metaJson?.rowIndex || 0),
     chunk_no: chunk.chunkNo,
     content: chunk.chunkText,
     token_count: chunk.tokenCount,
@@ -555,6 +825,164 @@ async function syncChunkToEs({ file, chunk, tags }) {
   const auth = config.username ? { username: config.username, password: config.password } : undefined;
   await axios.put(url, payload, { auth, timeout: Number(process.env.ES_TIMEOUT_MS || 20000) });
   return { skipped: false, esDocId: String(chunk.id) };
+}
+
+async function recallFromEs({ collectionId, query, topK = 5 }) {
+  const config = buildEsConfig();
+  if (!config.enabled) {
+    return { skipped: true, hits: [] };
+  }
+  ensureConfig(config, ['baseUrl', 'indexName'], 'es');
+  const auth = config.username ? { username: config.username, password: config.password } : undefined;
+  const url = `${config.baseUrl}/${encodeURIComponent(config.indexName)}/_search`;
+  const body = {
+    size: Math.max(1, Math.min(100, Number(topK) || 5)),
+    query: {
+      bool: {
+        must: [
+          {
+            multi_match: {
+              query,
+              type: 'most_fields',
+              fields: ['content^3', 'row_kv_text^4', 'heading_path_text^2', 'file_name^1.5', 'sheet_name^1.2', 'tags']
+            }
+          }
+        ],
+        filter: [
+          { term: { collection_id: Number(collectionId) } }
+        ]
+      }
+    },
+    _source: [
+      'id',
+      'collection_id',
+      'file_id',
+      'file_name',
+      'heading_path_text',
+      'heading_path',
+      'chunk_type',
+      'row_kv_text',
+      'sheet_name',
+      'table_id',
+      'row_index',
+      'chunk_no',
+      'content',
+      'tags'
+    ]
+  };
+  const response = await axios.post(url, body, {
+    auth,
+    timeout: Number(process.env.ES_TIMEOUT_MS || 20000)
+  });
+  const hits = (response.data?.hits?.hits || []).map((item, index) => ({
+    source: 'es',
+    rank: index + 1,
+    score: Number(item._score || 0),
+    chunkId: String(item._source?.id || item._id || ''),
+    chunkNo: Number(item._source?.chunk_no || 0),
+    fileId: String(item._source?.file_id || ''),
+    fileName: String(item._source?.file_name || ''),
+    headingPath: Array.isArray(item._source?.heading_path)
+      ? item._source.heading_path
+      : (String(item._source?.heading_path_text || '').trim() ? String(item._source.heading_path_text).split(' / ') : []),
+    chunkType: String(item._source?.chunk_type || 'paragraph'),
+    rowKvText: String(item._source?.row_kv_text || ''),
+    sheetName: String(item._source?.sheet_name || ''),
+    tableId: String(item._source?.table_id || ''),
+    rowIndex: Number(item._source?.row_index || 0),
+    content: String(item._source?.content || ''),
+    tags: Array.isArray(item._source?.tags) ? item._source.tags : []
+  }));
+  return { skipped: false, hits };
+}
+
+function fuseAndRerankHits({ query, esHits = [], vecHits = [], topK = 5, rrfK = 60 }) {
+  const map = new Map();
+  const push = (hit, lane) => {
+    const keyBase = hit.chunkId || `${hit.fileId}:${sha256(hit.content).slice(0, 12)}`;
+    const key = String(keyBase);
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        chunkId: hit.chunkId,
+        chunkNo: hit.chunkNo || 0,
+        fileId: hit.fileId,
+        fileName: hit.fileName,
+        headingPath: hit.headingPath || [],
+        chunkType: hit.chunkType || 'paragraph',
+        rowKvText: hit.rowKvText || '',
+        sheetName: hit.sheetName || '',
+        tableId: hit.tableId || '',
+        rowIndex: Number(hit.rowIndex || 0),
+        content: hit.content || '',
+        esRank: null,
+        vecRank: null,
+        esScore: 0,
+        vecScore: 0
+      });
+    }
+    const item = map.get(key);
+    if (lane === 'es') {
+      item.esRank = hit.rank;
+      item.esScore = hit.score;
+    } else {
+      item.vecRank = hit.rank;
+      item.vecScore = hit.score;
+    }
+  };
+  esHits.forEach((hit) => push(hit, 'es'));
+  vecHits.forEach((hit) => push(hit, 'vector'));
+
+  const queryTokens = tokenizeText(query);
+  const merged = Array.from(map.values()).map((item) => {
+    const rrfScore =
+      (item.esRank ? 1 / (rrfK + item.esRank) : 0) +
+      (item.vecRank ? 1 / (rrfK + item.vecRank) : 0);
+    const haystack = `${item.fileName || ''} ${Array.isArray(item.headingPath) ? item.headingPath.join(' ') : ''} ${item.content || ''}`.toLowerCase();
+    const overlapCount = queryTokens.filter((token) => haystack.includes(token)).length;
+    const overlapScore = queryTokens.length ? overlapCount / queryTokens.length : 0;
+    const titleHitScore = queryTokens.some((token) => String(item.fileName || '').toLowerCase().includes(token))
+      ? 1
+      : 0;
+    const rerankScore = 0.7 * rrfScore + 0.2 * overlapScore + 0.1 * titleHitScore;
+    return {
+      ...item,
+      rrfScore,
+      overlapScore,
+      titleHitScore,
+      rerankScore
+    };
+  });
+
+  merged.sort((a, b) => b.rrfScore - a.rrfScore);
+  const fused = merged.slice(0, Math.max(1, Math.min(100, Number(topK) || 5)));
+
+  const reranked = [...fused].sort((a, b) => b.rerankScore - a.rerankScore);
+  return {
+    fused,
+    reranked
+  };
+}
+
+async function retrievalDebug({ collectionId, query, esTopK = 5, vecTopK = 5, fuseTopK = 5 }) {
+  const lexicalProvider = createEsLexicalProvider({
+    axiosInstance: axios,
+    buildEsConfig,
+    ensureConfig
+  });
+  const vectorProvider = createQdrantVectorProvider();
+  const retrievalService = createHybridRetrievalService({
+    lexicalProvider,
+    vectorProvider,
+    assetResolver: getChunkAssetRefMap
+  });
+  return retrievalService.retrievalDebug({
+    collectionId,
+    query,
+    esTopK,
+    vecTopK,
+    fuseTopK
+  });
 }
 
 async function deleteEsDocsByQuery({ collectionId = null, fileId = null } = {}) {
@@ -574,212 +1002,47 @@ async function deleteEsDocsByQuery({ collectionId = null, fileId = null } = {}) 
 
   const url = `${config.baseUrl}/${encodeURIComponent(config.indexName)}/_delete_by_query?conflicts=proceed&refresh=true`;
   const auth = config.username ? { username: config.username, password: config.password } : undefined;
-  await axios.post(url, {
-    query: {
-      bool: {
-        filter: filters
+  try {
+    await axios.post(url, {
+      query: {
+        bool: {
+          filter: filters
+        }
       }
+    }, { auth, timeout: Number(process.env.ES_TIMEOUT_MS || 20000) });
+  } catch (error) {
+    const status = Number(error?.response?.status);
+    if (status === 404) {
+      return { skipped: true, indexMissing: true };
     }
-  }, { auth, timeout: Number(process.env.ES_TIMEOUT_MS || 20000) });
+    throw error;
+  }
   return { skipped: false };
 }
 
-function resolveRagflowDatasetId(collection) {
-  const config = buildRagflowConfig();
-  if (!config.enabled) return '';
-  return String(collection?.ragflowDatasetId || config.fallbackDatasetId || '').trim();
-}
-
-async function ragflowJsonRequest({ url, method, body, acceptedStatusCodes = [200] }) {
-  const response = await fetch(url, {
-    method,
-    headers: {
-      Authorization: `Bearer ${buildRagflowConfig().apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  if (!acceptedStatusCodes.includes(response.status)) {
-    const text = await response.text();
-    throw new Error(`ragflow_http_failed:${response.status}:${text}`);
+function buildVectorChunkContent(chunk) {
+  const headingPath = Array.isArray(chunk?.metaJson?.headingPath) ? chunk.metaJson.headingPath : [];
+  const rowKvText = String(chunk?.metaJson?.rowKvText || '').trim();
+  const sheetName = String(chunk?.metaJson?.sheetName || '').trim();
+  const tableId = String(chunk?.metaJson?.tableId || '').trim();
+  const parts = [];
+  if (headingPath.length) {
+    parts.push(`章节: ${headingPath.join(' / ')}`);
   }
-  return response.json();
-}
-
-async function createRagflowDataset({ name, description = '' }) {
-  const config = buildRagflowConfig();
-  if (!config.enabled) return { skipped: true, datasetId: '' };
-  ensureConfig(config, ['baseUrl', 'apiKey'], 'ragflow');
-  const body = await ragflowJsonRequest({
-    url: `${config.baseUrl}/api/v1/datasets`,
-    method: 'POST',
-    body: {
-      name,
-      description: description || '',
-      permission: config.datasetPermission,
-      chunk_method: config.datasetChunkMethod
-    }
-  });
-  const datasetId = body?.data?.id || body?.data?.dataset_id || '';
-  if (!datasetId) {
-    throw new Error('ragflow_dataset_id_missing');
+  if (sheetName) {
+    parts.push(`工作表: ${sheetName}`);
   }
-  return { skipped: false, datasetId };
-}
-
-async function updateRagflowDataset({ datasetId, name, description = '' }) {
-  const config = buildRagflowConfig();
-  if (!config.enabled || !datasetId) return { skipped: true };
-  ensureConfig(config, ['baseUrl', 'apiKey'], 'ragflow');
-  await ragflowJsonRequest({
-    url: `${config.baseUrl}/api/v1/datasets/${datasetId}`,
-    method: 'PUT',
-    body: {
-      name,
-      description: description || ''
-    }
-  });
-  return { skipped: false };
-}
-
-async function deleteRagflowDataset(datasetId) {
-  const config = buildRagflowConfig();
-  if (!config.enabled || !datasetId) return { skipped: true };
-  ensureConfig(config, ['baseUrl', 'apiKey'], 'ragflow');
-  await ragflowJsonRequest({
-    url: `${config.baseUrl}/api/v1/datasets`,
-    method: 'DELETE',
-    body: {
-      ids: [datasetId]
-    }
-  });
-  return { skipped: false };
-}
-
-async function uploadRagflowDocument({ datasetId, storageUri, fileName }) {
-  const config = buildRagflowConfig();
-  if (!config.enabled) return { skipped: true, documentId: '' };
-  ensureConfig(config, ['baseUrl', 'apiKey'], 'ragflow');
-  if (!datasetId) {
-    throw new Error('ragflow_dataset_id_missing');
+  if (tableId) {
+    parts.push(`表格: ${tableId}`);
   }
-  const localPath = getLocalPathFromStorageUri(storageUri);
-  if (!localPath) {
-    throw new Error('ragflow_source_file_missing');
+  if (rowKvText) {
+    parts.push(`行数据: ${rowKvText}`);
   }
-  const blob = await fs.readFile(localPath);
-  const formData = new FormData();
-  formData.append('file', new Blob([blob]), fileName);
-  const response = await fetch(`${config.baseUrl}/api/v1/datasets/${datasetId}/documents`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`
-    },
-    body: formData
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`ragflow_document_upload_failed:${response.status}:${text}`);
+  const main = String(chunk?.chunkText || '').trim();
+  if (main) {
+    parts.push(main);
   }
-  const body = await response.json();
-  const documentId = body?.data?.[0]?.id || body?.data?.id || '';
-  if (!documentId) {
-    throw new Error('ragflow_document_id_missing');
-  }
-  return { skipped: false, documentId };
-}
-
-async function deleteRagflowDocument({ datasetId, documentId }) {
-  const config = buildRagflowConfig();
-  if (!config.enabled || !datasetId || !documentId) return { skipped: true };
-  ensureConfig(config, ['baseUrl', 'apiKey'], 'ragflow');
-  await ragflowJsonRequest({
-    url: `${config.baseUrl}/api/v1/datasets/${datasetId}/documents`,
-    method: 'DELETE',
-    body: {
-      ids: [documentId]
-    }
-  });
-  return { skipped: false };
-}
-
-async function updateRagflowDocumentName({ datasetId, documentId, fileName }) {
-  const config = buildRagflowConfig();
-  if (!config.enabled || !datasetId || !documentId) return { skipped: true };
-  ensureConfig(config, ['baseUrl', 'apiKey'], 'ragflow');
-  await ragflowJsonRequest({
-    url: `${config.baseUrl}/api/v1/datasets/${datasetId}/documents/${documentId}`,
-    method: 'PUT',
-    body: {
-      name: fileName
-    }
-  });
-  return { skipped: false };
-}
-
-async function clearRagflowDocumentChunks({ datasetId, documentId }) {
-  const config = buildRagflowConfig();
-  if (!config.enabled || !datasetId || !documentId) return { skipped: true };
-  ensureConfig(config, ['baseUrl', 'apiKey'], 'ragflow');
-  await ragflowJsonRequest({
-    url: `${config.baseUrl}/api/v1/datasets/${datasetId}/documents/${documentId}/chunks`,
-    method: 'DELETE',
-    body: {
-      delete_all: true
-    }
-  });
-  return { skipped: false };
-}
-
-function buildRagflowChunkSession({ collection, file }) {
-  const config = buildRagflowConfig();
-  if (!config.enabled) {
-    return { skipped: true, documentId: '' };
-  }
-  ensureConfig(config, ['baseUrl', 'apiKey'], 'ragflow');
-  const datasetId = resolveRagflowDatasetId(collection);
-  if (!datasetId || !file?.ragflowDocumentId) {
-    throw new Error('ragflow_binding_missing');
-  }
-  return {
-    skipped: false,
-    documentId: file.ragflowDocumentId,
-    datasetId,
-    baseUrl: config.baseUrl,
-    apiKey: config.apiKey
-  };
-}
-
-async function syncChunkToRagflow({ ragflowSession, chunk, tags }) {
-  if (ragflowSession?.skipped) {
-    return { skipped: true, vectorDocId: null };
-  }
-  const payload = {
-    content: chunk.chunkText,
-    important_keywords: tags.slice(0, 8),
-    questions: [],
-    tag_kwd: tags.slice(0, 8)
-  };
-  const response = await fetch(
-    `${ragflowSession.baseUrl}/api/v1/datasets/${ragflowSession.datasetId}/documents/${ragflowSession.documentId}/chunks`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${ragflowSession.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    }
-  );
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`ragflow_chunk_sync_failed:${response.status}:${text}`);
-  }
-  const body = await response.json();
-  return {
-    skipped: false,
-    vectorDocId: body?.data?.chunk?.id || ''
-  };
+  return parts.join('\n');
 }
 
 async function listCollections({ keyword = '' } = {}) {
@@ -806,34 +1069,17 @@ async function listCollections({ keyword = '' } = {}) {
 async function createCollection({ name, code, description, tags = [], user }) {
   const operatorId = getOperatorId(user);
   const finalTags = normalizeCollectionTags(tags);
-  let ragflowDatasetId = '';
-  try {
-    const ragflowResult = await createRagflowDataset({
+  return sequelize.transaction(async (transaction) => {
+    const created = await KbCollection.create({
       name: name.trim(),
-      description
-    });
-    ragflowDatasetId = ragflowResult.datasetId || '';
-  } catch (error) {
-    error.message = `kb.ragflow.datasetSyncFailed:${error.message}`;
-    throw error;
-  }
-  try {
-    return await sequelize.transaction(async (transaction) => {
-      const created = await KbCollection.create({
-        name: name.trim(),
-        code: code.trim(),
-        description: description || null,
-        ragflowDatasetId: ragflowDatasetId || null,
-        createdBy: operatorId,
-        updatedBy: operatorId
-      }, { transaction });
-      await attachTagsToCollection(created.id, finalTags, operatorId, transaction);
-      return created;
-    });
-  } catch (error) {
-    await deleteRagflowDataset(ragflowDatasetId).catch(() => null);
-    throw error;
-  }
+      code: code.trim(),
+      description: description || null,
+      createdBy: operatorId,
+      updatedBy: operatorId
+    }, { transaction });
+    await attachTagsToCollection(created.id, finalTags, operatorId, transaction);
+    return created;
+  });
 }
 
 async function getCollectionById(id) {
@@ -862,16 +1108,6 @@ async function updateCollection({ id, name, description, tags, user }) {
   const finalTags = Array.isArray(tags) ? normalizeCollectionTags(tags) : null;
   const nextName = String(name || collection.name).trim();
   const nextDescription = typeof description === 'string' ? description : collection.description;
-  try {
-    await updateRagflowDataset({
-      datasetId: resolveRagflowDatasetId(collection),
-      name: nextName,
-      description: nextDescription || ''
-    });
-  } catch (error) {
-    error.message = `kb.ragflow.datasetSyncFailed:${error.message}`;
-    throw error;
-  }
   await sequelize.transaction(async (transaction) => {
     await collection.update({
       name: nextName,
@@ -903,10 +1139,11 @@ async function deleteCollection({ id, user }) {
     error.message = `kb.es.deleteSyncFailed:${error.message}`;
     throw error;
   }
+  const vectorProvider = createQdrantVectorProvider();
   try {
-    await deleteRagflowDataset(resolveRagflowDatasetId(collection));
+    await vectorProvider.deleteCollectionChunks({ collectionId: collection.id });
   } catch (error) {
-    error.message = `kb.ragflow.datasetSyncFailed:${error.message}`;
+    error.message = `kb.vector.deleteSyncFailed:${error.message}`;
     throw error;
   }
 
@@ -933,52 +1170,63 @@ async function deleteCollection({ id, user }) {
 async function listRecycleBinItems({ keyword = '' } = {}) {
   const cutoff = getRecycleCutoffDate();
   const key = String(keyword || '').trim();
-  const whereCollection = {
-    isDeleted: 1,
-    deletedAt: {
-      [Op.gte]: cutoff
-    }
-  };
-  const whereFile = {
+  const whereDeletedCollection = {
     isDeleted: 1,
     deletedAt: {
       [Op.gte]: cutoff
     }
   };
   if (key) {
-    whereCollection.name = { [Op.like]: `%${key}%` };
+    whereDeletedCollection.name = { [Op.like]: `%${key}%` };
   }
 
-  const deletedCollections = await KbCollection.findAll({
-    where: whereCollection,
-    order: [['deletedAt', 'DESC']]
+  const whereDeletedFile = {
+    isDeleted: 1,
+    deletedAt: {
+      [Op.gte]: cutoff
+    }
+  };
+  if (key) {
+    whereDeletedFile.fileName = { [Op.like]: `%${key}%` };
+  }
+
+  const [deletedCollections, deletedFiles] = await Promise.all([
+    KbCollection.findAll({
+      where: whereDeletedCollection,
+      order: [['deletedAt', 'DESC']]
+    }),
+    KbFile.findAll({
+      where: whereDeletedFile,
+      order: [['deletedAt', 'DESC']]
+    })
+  ]);
+
+  const deletedCollectionIdSet = new Set(deletedCollections.map((item) => Number(item.id)));
+  const fileCollectionIds = Array.from(new Set(deletedFiles.map((item) => Number(item.collectionId)).filter((id) => Number.isFinite(id) && id > 0)));
+  const extraCollectionIds = fileCollectionIds.filter((id) => !deletedCollectionIdSet.has(id));
+  const activeCollections = extraCollectionIds.length
+    ? await KbCollection.findAll({
+      where: {
+        id: { [Op.in]: extraCollectionIds }
+      }
+    })
+    : [];
+
+  const collectionMap = new Map();
+  deletedCollections.forEach((collection) => {
+    collectionMap.set(Number(collection.id), collection);
   });
-  const deletedCollectionIds = deletedCollections.map((item) => item.id);
-  if (!deletedCollectionIds.length) {
-    return {
-      retentionDays: RECYCLE_RETENTION_DAYS,
-      items: []
-    };
-  }
-
-  whereFile.collectionId = {
-    [Op.in]: deletedCollectionIds
-  };
-  if (key) {
-    whereFile.fileName = { [Op.like]: `%${key}%` };
-  }
-
-  const deletedFiles = await KbFile.findAll({
-    where: whereFile,
-    order: [['deletedAt', 'DESC']]
+  activeCollections.forEach((collection) => {
+    collectionMap.set(Number(collection.id), collection);
   });
 
   const groupedFileMap = new Map();
   deletedFiles.forEach((file) => {
-    if (!groupedFileMap.has(file.collectionId)) groupedFileMap.set(file.collectionId, []);
-    groupedFileMap.get(file.collectionId).push({
+    const collectionId = Number(file.collectionId);
+    if (!groupedFileMap.has(collectionId)) groupedFileMap.set(collectionId, []);
+    groupedFileMap.get(collectionId).push({
       id: file.id,
-      collectionId: file.collectionId,
+      collectionId,
       fileName: file.fileName,
       fileExt: file.fileExt,
       deletedAt: file.deletedAt,
@@ -988,7 +1236,7 @@ async function listRecycleBinItems({ keyword = '' } = {}) {
 
   const items = [];
   deletedCollections.forEach((collection) => {
-    const collectionId = collection.id;
+    const collectionId = Number(collection.id);
     const files = groupedFileMap.get(collectionId) || [];
     files.forEach((file) => { file.canRestore = false; });
     items.push({
@@ -997,6 +1245,20 @@ async function listRecycleBinItems({ keyword = '' } = {}) {
       isDeleted: true,
       deletedAt: collection.deletedAt,
       canRestore: withinRecycleWindow(collection.deletedAt),
+      fileCount: files.length,
+      files
+    });
+  });
+  activeCollections.forEach((collection) => {
+    const collectionId = Number(collection.id);
+    const files = groupedFileMap.get(collectionId) || [];
+    if (!files.length) return;
+    items.push({
+      id: collection.id,
+      name: collection.name,
+      isDeleted: false,
+      deletedAt: files[0]?.deletedAt || null,
+      canRestore: false,
       fileCount: files.length,
       files
     });
@@ -1120,56 +1382,17 @@ async function restoreRecycleItems({ collectionIds = [], fileIds = [], user, loc
     return restored;
   });
 
-  const uniqueRestoredCollectionIds = Array.from(new Set(restoredResult.restoredCollectionIds));
   const uniqueRestoredFileIds = Array.from(new Set(restoredResult.restoredFileIds));
-  const collectionMap = new Map();
-
-  for (const collectionId of uniqueRestoredCollectionIds) {
-    const collection = await KbCollection.findByPk(collectionId);
-    if (!collection) continue;
-    try {
-      const ragflowResult = await createRagflowDataset({
-        name: collection.name,
-        description: collection.description || ''
-      });
-      if (!ragflowResult.skipped && ragflowResult.datasetId) {
-        await collection.update({
-          ragflowDatasetId: ragflowResult.datasetId
-        });
-      }
-    } catch (error) {
-      error.message = `kb.ragflow.datasetSyncFailed:${error.message}`;
-      throw error;
-    }
-    collectionMap.set(collection.id, collection);
-  }
 
   for (const fileId of uniqueRestoredFileIds) {
     const file = await KbFile.findByPk(fileId);
     if (!file) continue;
-    let collection = collectionMap.get(file.collectionId);
-    if (!collection) {
-      collection = await KbCollection.findByPk(file.collectionId);
-      if (collection) collectionMap.set(collection.id, collection);
-    }
-    if (!collection) continue;
-    try {
-      const ragflowResult = await uploadRagflowDocument({
-        datasetId: resolveRagflowDatasetId(collection),
-        storageUri: file.storageUri,
-        fileName: file.fileName
-      });
-      await file.update({
-        ragflowDocumentId: ragflowResult.documentId || null,
-        status: 'uploaded',
-        errorMessage: null,
-        errorMessageKey: null,
-        updatedBy: operatorId
-      });
-    } catch (error) {
-      error.message = `kb.ragflow.documentSyncFailed:${error.message}`;
-      throw error;
-    }
+    await file.update({
+      status: 'uploaded',
+      errorMessage: null,
+      errorMessageKey: null,
+      updatedBy: operatorId
+    });
   }
 
   let rebuildQueuedCount = 0;
@@ -1266,6 +1489,15 @@ async function submitRecyclePurgeJobs({ collectionIds = [], fileIds = [], user, 
         queueJobId: queueJob.id
       }
     });
+    await publishKbTaskStatus({
+      taskId: jobRecord.id,
+      queueJobId: String(queueJob.id),
+      status: 'queued',
+      progress: 0,
+      fileId: jobItem.bizType === 'file' ? Number(jobItem.bizId) : null,
+      collectionId: null,
+      jobType: 'purge'
+    });
     createdJobs.push(jobRecord);
   }
   return createdJobs;
@@ -1285,9 +1517,25 @@ async function safeDeleteLocalFile(storageUri = '') {
   await fs.unlink(localPath).catch(() => null);
 }
 
+async function safeDeleteStorageUri(storageUri = '') {
+  if (isS3Uri(storageUri)) {
+    await deleteObjectByUri(storageUri).catch(() => null);
+    return;
+  }
+  await safeDeleteLocalFile(storageUri);
+}
+
 async function hardDeleteFileById({ fileId, transaction }) {
   const file = await KbFile.findByPk(fileId, { transaction });
   if (!file) return false;
+  const existingAssets = await KbAsset.findAll({
+    where: { fileId: file.id },
+    attributes: ['storageUri'],
+    transaction
+  });
+  const assetStorageUris = existingAssets
+    .map((item) => String(item.storageUri || '').trim())
+    .filter(Boolean);
 
   const chunks = await KbChunk.findAll({
     where: { fileId: file.id },
@@ -1329,7 +1577,14 @@ async function hardDeleteFileById({ fileId, transaction }) {
     where: { id: file.id },
     transaction
   });
-  await safeDeleteLocalFile(file.storageUri);
+  for (const assetStorageUri of assetStorageUris) {
+    await safeDeleteStorageUri(assetStorageUri);
+  }
+  if (isS3Uri(file.storageUri)) {
+    await deleteObjectByUri(file.storageUri);
+  } else {
+    await safeDeleteLocalFile(file.storageUri);
+  }
   return true;
 }
 
@@ -1471,6 +1726,7 @@ async function listCollectionFilesPaged({
   }
 
   const indexSummaryMap = new Map();
+  const requireVectorSync = buildVectorSyncConfig().enabled;
   if (fileIds.length) {
     const chunkRows = await KbChunk.findAll({
       where: {
@@ -1507,7 +1763,7 @@ async function listCollectionFilesPaged({
       const vectorStatus = chunk.indexState?.vectorStatus || 'pending';
       if (esStatus === 'done') bucket.esDone += 1;
       if (esStatus === 'failed') bucket.esFailed += 1;
-      if (vectorStatus === 'done') bucket.vectorDone += 1;
+      if (vectorStatus === 'done' || (!requireVectorSync && vectorStatus === 'skipped')) bucket.vectorDone += 1;
       if (vectorStatus === 'failed') bucket.vectorFailed += 1;
     });
 
@@ -1535,7 +1791,8 @@ async function listCollectionFilesPaged({
       vectorStatus: 'pending'
     };
     const failedFile = String(plain.status || '').includes('failed') || plain.status === 'file_error';
-    const hasKeyChannelsReady = indexSummary.esStatus === 'done' && indexSummary.vectorStatus === 'done';
+    const hasKeyChannelsReady = indexSummary.esStatus === 'done'
+      && (!requireVectorSync || indexSummary.vectorStatus === 'done');
     let displayStatus = 'processing';
     if (failedFile || latestJobStatus === 'failed') {
       displayStatus = 'failed';
@@ -1577,14 +1834,11 @@ async function deleteFile({ id, user }) {
     error.message = `kb.es.deleteSyncFailed:${error.message}`;
     throw error;
   }
-  const collection = await KbCollection.findByPk(file.collectionId);
+  const vectorProvider = createQdrantVectorProvider();
   try {
-    await deleteRagflowDocument({
-      datasetId: resolveRagflowDatasetId(collection),
-      documentId: file.ragflowDocumentId
-    });
+    await vectorProvider.deleteFileChunks({ fileId: file.id });
   } catch (error) {
-    error.message = `kb.ragflow.documentSyncFailed:${error.message}`;
+    error.message = `kb.vector.deleteSyncFailed:${error.message}`;
     throw error;
   }
   await file.update({
@@ -1646,6 +1900,15 @@ async function rebuildFile({ id, user, locale }) {
       queueJobId: queueJob.id
     }
   });
+  await publishKbTaskStatus({
+    taskId: jobRecord.id,
+    queueJobId: String(queueJob.id),
+    status: 'queued',
+    progress: 0,
+    fileId: Number(file.id),
+    collectionId: Number(file.collectionId),
+    jobType: 'rebuild'
+  });
 
   return {
     file,
@@ -1682,15 +1945,14 @@ async function renameFile({ id, fileName, user }) {
   if (duplicated) {
     throw new Error('kb.fileNameDuplicated');
   }
-  const collection = await KbCollection.findByPk(file.collectionId);
+  const vectorProvider = createQdrantVectorProvider();
   try {
-    await updateRagflowDocumentName({
-      datasetId: resolveRagflowDatasetId(collection),
-      documentId: file.ragflowDocumentId,
+    await vectorProvider.updateFileMetadata({
+      fileId: file.id,
       fileName: nextName
     });
   } catch (error) {
-    error.message = `kb.ragflow.documentSyncFailed:${error.message}`;
+    error.message = `kb.vector.renameSyncFailed:${error.message}`;
     throw error;
   }
   await file.update({
@@ -1708,6 +1970,12 @@ async function getFileDownloadInfo({ id }) {
     }
   });
   if (!file) return null;
+  if (isS3Uri(file.storageUri)) {
+    return {
+      file,
+      localPath: ''
+    };
+  }
   const localPath = getLocalPathFromStorageUri(file.storageUri);
   if (!localPath) {
     throw new Error('kb.fileNotFound');
@@ -1716,6 +1984,24 @@ async function getFileDownloadInfo({ id }) {
     file,
     localPath
   };
+}
+
+async function rollbackFailedIngestCreation({
+  lineageRecord = null,
+  jobRecord = null,
+  file = null
+} = {}) {
+  for (const target of [lineageRecord, jobRecord, file]) {
+    if (!target || typeof target.destroy !== 'function') continue;
+    try {
+      await target.destroy();
+    } catch (error) {
+      console.warn('[KB提交] rollback_failed', {
+        target: target.constructor?.name || 'record',
+        message: error.message
+      });
+    }
+  }
 }
 
 async function submitIngestTask({
@@ -1776,22 +2062,8 @@ async function submitIngestTask({
     }
   });
   const versionNo = Number.isFinite(latestVersion) ? latestVersion + 1 : 1;
-  const ragflowDatasetId = resolveRagflowDatasetId(collection);
-  let ragflowDocumentId = null;
-  try {
-    const ragflowResult = await uploadRagflowDocument({
-      datasetId: ragflowDatasetId,
-      storageUri,
-      fileName: fileName.trim()
-    });
-    ragflowDocumentId = ragflowResult.documentId || null;
-  } catch (error) {
-    error.message = `kb.ragflow.documentSyncFailed:${error.message}`;
-    throw error;
-  }
-
-  try {
-    const file = await KbFile.create({
+  let lineageRecord = null;
+  const file = await KbFile.create({
       collectionId,
       fileName: fileName.trim(),
       fileExt: normalizedExt,
@@ -1799,7 +2071,7 @@ async function submitIngestTask({
       fileSize: Number(fileSize || 0),
       storageUri: storageUri || `kb://${collectionId}/${Date.now()}-${fileName}`,
       contentSha256: contentHash,
-      ragflowDocumentId,
+      ragflowDocumentId: null,
       uploadMode,
       versionNo,
       status: 'uploaded',
@@ -1807,32 +2079,34 @@ async function submitIngestTask({
       updatedBy: operatorId
     });
 
-    if (existing && uploadMode === 'force_version') {
-      await KbFileLineage.create({
-        collectionId,
-        sourceFileId: existing.id,
-        derivedFileId: file.id,
-        relationType: 'new_version',
-        createdBy: operatorId
-      });
-    }
-
-    const idempotencyKey = `${file.id}:${contentHash}:${Date.now()}`;
-    const jobRecord = await KbJob.create({
-      jobType: 'parse',
-      bizType: 'file',
-      bizId: file.id,
-      idempotencyKey,
-      queueName: 'kb-ingest',
-      payloadJson: {
-        locale,
-        metadata
-      },
-      status: 'queued',
+  if (existing && uploadMode === 'force_version') {
+    lineageRecord = await KbFileLineage.create({
+      collectionId,
+      sourceFileId: existing.id,
+      derivedFileId: file.id,
+      relationType: 'new_version',
       createdBy: operatorId
     });
+  }
 
-    const queueJob = await kbIngestQueue.add(
+  const idempotencyKey = `${file.id}:${contentHash}:${Date.now()}`;
+  const jobRecord = await KbJob.create({
+    jobType: 'parse',
+    bizType: 'file',
+    bizId: file.id,
+    idempotencyKey,
+    queueName: 'kb-ingest',
+    payloadJson: {
+      locale,
+      metadata
+    },
+    status: 'queued',
+    createdBy: operatorId
+  });
+
+  let queueJob;
+  try {
+    queueJob = await kbIngestQueue.add(
       'ingest-kb',
       {
         fileId: file.id,
@@ -1847,26 +2121,36 @@ async function submitIngestTask({
         jobId: `kb-file-${file.id}-job-${jobRecord.id}`
       }
     );
-
-    await jobRecord.update({
-      payloadJson: {
-        ...(jobRecord.payloadJson || {}),
-        queueJobId: queueJob.id
-      }
-    });
-
-    return {
-      file,
-      jobRecord,
-      queueJobId: queueJob.id
-    };
   } catch (error) {
-    await deleteRagflowDocument({
-      datasetId: ragflowDatasetId,
-      documentId: ragflowDocumentId
-    }).catch(() => null);
+    await rollbackFailedIngestCreation({
+      lineageRecord,
+      jobRecord,
+      file
+    });
     throw error;
   }
+
+  await jobRecord.update({
+    payloadJson: {
+      ...(jobRecord.payloadJson || {}),
+      queueJobId: queueJob.id
+    }
+  });
+  await publishKbTaskStatus({
+    taskId: jobRecord.id,
+    queueJobId: String(queueJob.id),
+    status: 'queued',
+    progress: 0,
+    fileId: Number(file.id),
+    collectionId: Number(collectionId),
+    jobType: 'parse'
+  });
+
+  return {
+    file,
+    jobRecord,
+    queueJobId: queueJob.id
+  };
 }
 
 async function getJobStatus(jobId) {
@@ -1896,7 +2180,188 @@ async function getJobStatus(jobId) {
   };
 }
 
-async function runIngestPipeline({ fileId, kbJobId, rawText = '' }) {
+async function upsertFileAssetsAndRelations({
+  file,
+  chunks = [],
+  createdChunks = [],
+  parsedDocx = null,
+  parsedPdf = null,
+  transaction
+}) {
+  if (!file) return;
+  const docxAssets = (parsedDocx && Array.isArray(parsedDocx.images))
+    ? parsedDocx.images
+      .map((image) => ({
+        assetKey: String(image.imageKey || '').trim(),
+        assetType: 'image',
+        contentType: image.contentType || '',
+        base64: image.base64 || '',
+        text: '',
+        sha256: image.sha256 || null,
+        byteLength: Number(image.byteLength || 0),
+        sourceRef: String(image.imageKey || '').trim(),
+        sourcePageNo: null,
+        width: null,
+        height: null,
+        meta: {
+          parser: 'docx_mammoth',
+          byteLength: Number(image.byteLength || 0)
+        }
+      }))
+      .filter((item) => item.assetKey && item.base64)
+    : [];
+  const pdfAssets = (parsedPdf && Array.isArray(parsedPdf.assets))
+    ? parsedPdf.assets
+      .map((asset) => ({
+        assetKey: String(asset.assetKey || '').trim(),
+        assetType: String(asset.assetType || 'image'),
+        contentType: asset.contentType || '',
+        base64: asset.base64 || '',
+        text: String(asset.text || ''),
+        sha256: asset.sha256 || null,
+        byteLength: Number(asset.byteLength || 0),
+        sourceRef: String(asset.sourceRef || asset.assetKey || '').trim(),
+        sourcePageNo: Number(asset.sourcePageNo || 0) || null,
+        width: Number(asset.width || 0) || null,
+        height: Number(asset.height || 0) || null,
+        meta: {
+          ...(asset.meta || {}),
+          parser: 'pdf_parse'
+        }
+      }))
+      .filter((item) => item.assetKey && (item.base64 || item.text))
+    : [];
+  const sourceAssets = [...docxAssets, ...pdfAssets];
+  if (!sourceAssets.length) return;
+
+  const storageConfig = buildStorageConfig();
+  const assetsDir = path.resolve(kbStorage.LOCAL_DIR, 'assets');
+  await fs.mkdir(assetsDir, { recursive: true });
+
+  const existingAssets = await KbAsset.findAll({
+    where: { fileId: file.id },
+    attributes: ['id'],
+    transaction
+  });
+  const existingAssetIds = existingAssets.map((item) => item.id);
+  if (existingAssetIds.length) {
+    await KbChunkAsset.destroy({
+      where: { assetId: { [Op.in]: existingAssetIds } },
+      transaction
+    });
+    await sequelize.query('DELETE FROM kb_asset_ocr WHERE asset_id IN (:assetIds)', {
+      replacements: { assetIds: existingAssetIds },
+      transaction
+    });
+    await KbAsset.destroy({
+      where: { id: { [Op.in]: existingAssetIds } },
+      transaction
+    });
+  }
+
+  const assetKeyToAssetId = new Map();
+  for (const asset of sourceAssets) {
+    const assetKey = String(asset.assetKey || '').trim();
+    if (!assetKey) continue;
+    const payloadBuffer = asset.base64
+      ? Buffer.from(String(asset.base64), 'base64')
+      : Buffer.from(String(asset.text || ''), 'utf8');
+    const ext = path.extname(assetKey) || (String(asset.assetType || '') === 'table' ? '.txt' : '.bin');
+    const fileName = `${path.basename(file.fileName, path.extname(file.fileName))}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+    let storageUri = '';
+    if (storageConfig.enabled) {
+      const objectKey = buildUploadObjectKey({
+        collectionId: file.collectionId,
+        fileName
+      });
+      storageUri = await uploadBuffer({
+        buffer: payloadBuffer,
+        objectKey,
+        contentType: asset.contentType || ''
+      });
+    } else {
+      const localPath = path.resolve(assetsDir, fileName);
+      await fs.writeFile(localPath, payloadBuffer);
+      storageUri = `file://${localPath}`;
+    }
+    const created = await KbAsset.create({
+      fileId: file.id,
+      assetType: asset.assetType || 'image',
+      storageUri,
+      mimeType: asset.contentType || null,
+      assetSha256: asset.sha256 || null,
+      width: asset.width || null,
+      height: asset.height || null,
+      sourcePageNo: asset.sourcePageNo || null,
+      sourceRef: asset.sourceRef || assetKey,
+      metaJson: asset.meta || {}
+    }, { transaction });
+    assetKeyToAssetId.set(assetKey, created.id);
+  }
+
+  const relationRows = [];
+  createdChunks.forEach((chunk, idx) => {
+    const source = chunks[idx];
+    const keys = Array.isArray(source?.assetKeys) ? source.assetKeys : [];
+    keys.forEach((key, keyIndex) => {
+      const assetId = assetKeyToAssetId.get(String(key));
+      if (!assetId) return;
+      relationRows.push({
+        chunkId: chunk.id,
+        assetId,
+        relationType: 'inline',
+        sortNo: keyIndex
+      });
+    });
+  });
+
+  if (relationRows.length) {
+    await KbChunkAsset.bulkCreate(relationRows, { transaction });
+  }
+}
+
+async function getChunkAssetRefMap(chunkIds = []) {
+  const safeIds = Array.from(new Set((chunkIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
+  if (!safeIds.length) return new Map();
+  const rows = await KbChunkAsset.findAll({
+    where: {
+      chunkId: { [Op.in]: safeIds }
+    },
+    include: [
+      {
+        model: KbAsset,
+        as: 'asset',
+        required: true,
+        attributes: ['id', 'assetType', 'storageUri', 'mimeType', 'sourceRef', 'metaJson']
+      }
+    ],
+    order: [['sortNo', 'ASC']]
+  });
+  const map = new Map();
+  rows.forEach((row) => {
+    const key = String(row.chunkId);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push({
+      id: row.asset.id,
+      assetType: row.asset.assetType,
+      storageUri: row.asset.storageUri,
+      mimeType: row.asset.mimeType,
+      sourceRef: row.asset.sourceRef,
+      meta: row.asset.metaJson || {}
+    });
+  });
+  return map;
+}
+
+async function runIngestPipeline({
+  fileId,
+  kbJobId,
+  rawText = '',
+  parsedDocx = null,
+  parsedXlsx = null,
+  parsedPdf = null,
+  reindexOnly = false
+}) {
   const file = await KbFile.findByPk(fileId);
   const job = await KbJob.findByPk(kbJobId);
   const collection = file ? await KbCollection.findByPk(file.collectionId) : null;
@@ -1910,113 +2375,256 @@ async function runIngestPipeline({ fileId, kbJobId, rawText = '' }) {
   const uniqueTags = Array.from(new Set(normalizedTags));
 
   await job.update({ status: 'processing' });
-  await file.update({
-    status: 'parsing',
-    errorMessageKey: null,
-    errorMessage: null
-  });
 
-  const chunks = splitTextToChunks(cleanedText, { fileExt });
-  if (!chunks.length) {
-    await file.update({
-      status: 'parse_failed',
-      errorMessageKey: 'kb.parser.emptyText',
-      errorMessage: 'text_empty_after_parse'
-    });
-    await job.update({
-      status: 'failed',
-      lastErrorKey: 'kb.parser.emptyText',
-      lastError: 'text_empty_after_parse'
-    });
-    throw new Error('text_empty_after_parse');
-  }
-
+  let chunks = [];
   let createdChunks = [];
-  await sequelize.transaction(async (transaction) => {
-    const existingChunks = await KbChunk.findAll({
-      where: { fileId: file.id },
-      attributes: ['id'],
-      transaction
+  let staleAssetStorageUris = [];
+  if (reindexOnly) {
+    await file.update({
+      status: 'indexing',
+      errorMessageKey: null,
+      errorMessage: null
     });
-    const chunkIds = existingChunks.map((item) => item.id);
+    createdChunks = await KbChunk.findAll({
+      where: { fileId: file.id },
+      order: [['chunkNo', 'ASC']]
+    });
+    if (!createdChunks.length) {
+      throw new Error('reindex_chunks_not_found');
+    }
+    chunks = createdChunks.map((chunk) => ({
+      text: String(chunk.chunkText || ''),
+      chunkType: String(chunk.metaJson?.chunkType || 'paragraph'),
+      headingPath: Array.isArray(chunk.metaJson?.headingPath) ? chunk.metaJson.headingPath : [],
+      assetKeys: Array.isArray(chunk.metaJson?.assetKeys) ? chunk.metaJson.assetKeys : [],
+      rowKvText: String(chunk.metaJson?.rowKvText || ''),
+      sheetName: String(chunk.metaJson?.sheetName || ''),
+      tableId: String(chunk.metaJson?.tableId || ''),
+      rowIndex: Number(chunk.metaJson?.rowIndex || 0)
+    }));
+  } else {
+    await file.update({
+      status: 'parsing',
+      errorMessageKey: null,
+      errorMessage: null
+    });
 
-    if (chunkIds.length) {
-      await KbChunkIndexState.destroy({
-        where: {
-          chunkId: {
-            [Op.in]: chunkIds
-          }
-        },
-        transaction
+    chunks = (
+      (fileExt === 'docx' && parsedDocx && Array.isArray(parsedDocx.blocks))
+      || (fileExt === 'xlsx' && parsedXlsx && Array.isArray(parsedXlsx.blocks))
+      || (fileExt === 'pdf' && parsedPdf && Array.isArray(parsedPdf.blocks))
+    )
+      ? splitStructuredBlocksToChunks(
+        fileExt === 'docx'
+          ? parsedDocx.blocks
+          : (fileExt === 'xlsx' ? parsedXlsx.blocks : parsedPdf.blocks),
+        800
+      )
+      : splitTextToChunks(cleanedText, { fileExt });
+    if (!chunks.length) {
+      await file.update({
+        status: 'parse_failed',
+        errorMessageKey: 'kb.parser.emptyText',
+        errorMessage: 'text_empty_after_parse'
       });
+      await job.update({
+        status: 'failed',
+        lastErrorKey: 'kb.parser.emptyText',
+        lastError: 'text_empty_after_parse'
+      });
+      throw new Error('text_empty_after_parse');
     }
 
-    await KbChunk.destroy({
-      where: { fileId: file.id },
+    await sequelize.transaction(async (transaction) => {
+      const existingChunks = await KbChunk.findAll({
+        where: { fileId: file.id },
+        attributes: ['id'],
+        transaction
+      });
+      const chunkIds = existingChunks.map((item) => item.id);
+
+      if (chunkIds.length) {
+        await KbChunkIndexState.destroy({
+          where: {
+            chunkId: {
+              [Op.in]: chunkIds
+            }
+          },
+          transaction
+        });
+        await KbChunkAsset.destroy({
+          where: {
+            chunkId: {
+              [Op.in]: chunkIds
+            }
+          },
+          transaction
+        });
+      }
+
+      const existingAssets = await KbAsset.findAll({
+        where: { fileId: file.id },
+        attributes: ['storageUri'],
+        transaction
+      });
+      staleAssetStorageUris = existingAssets
+        .map((item) => String(item.storageUri || '').trim())
+        .filter(Boolean);
+
+      await sequelize.query('DELETE FROM kb_asset_ocr WHERE asset_id IN (SELECT id FROM kb_asset WHERE file_id = :fileId)', {
+        replacements: { fileId: file.id },
+        transaction
+      });
+      await KbAsset.destroy({
+        where: { fileId: file.id },
+        transaction
+      });
+
+      await KbChunk.destroy({
+        where: { fileId: file.id },
+        transaction
+      });
+
+      createdChunks = await KbChunk.bulkCreate(
+        chunks.map((item, index) => ({
+          fileId: file.id,
+          chunkNo: index + 1,
+          chunkText: item.text,
+          tokenCount: Math.ceil(item.text.length / 4),
+          charCount: item.text.length,
+          startOffset: item.startOffset,
+          endOffset: item.endOffset,
+          chunkSha256: sha256(item.text),
+          metaJson: {
+            parser:
+              fileExt === 'txt'
+                ? 'txt_v1'
+                : (fileExt === 'docx'
+                  ? 'docx_mammoth_v1'
+                  : (fileExt === 'xlsx'
+                    ? 'xlsx_sheet_v1'
+                    : (fileExt === 'pdf' && parsedPdf && Array.isArray(parsedPdf.blocks) && parsedPdf.blocks.length
+                      ? 'pdf_struct_v1'
+                      : (fileExt === 'pdf' ? 'pdf_text_v1' : 'plain_text')))),
+            cleaner: fileExt,
+            version:
+              fileExt === 'docx'
+                ? 5
+                : (fileExt === 'xlsx'
+                  ? 1
+                  : (fileExt === 'pdf' && parsedPdf && Array.isArray(parsedPdf.blocks) && parsedPdf.blocks.length ? 2 : (fileExt === 'pdf' ? 1 : 3))),
+            chunkType: item.chunkType || 'paragraph',
+            headingPath: item.headingPath || [],
+            assetKeys: item.assetKeys || [],
+            rowKvText: item.rowKvText || '',
+            sheetName: item.sheetName || '',
+            tableId: item.tableId || '',
+            rowIndex: Number(item.rowIndex || 0)
+          }
+        })),
+        { transaction }
+      );
+
+      await upsertFileAssetsAndRelations({
+        file,
+        chunks,
+        createdChunks,
+        parsedDocx: fileExt === 'docx' ? parsedDocx : null,
+        parsedPdf: fileExt === 'pdf' ? parsedPdf : null,
+        transaction
+      });
+
+      await KbChunkIndexState.bulkCreate(
+        createdChunks.map((chunk) => ({
+          chunkId: chunk.id,
+          esStatus: 'pending',
+          vectorStatus: 'pending'
+        })),
+        { transaction }
+      );
+    });
+    for (const storageUri of staleAssetStorageUris) {
+      await safeDeleteStorageUri(storageUri);
+    }
+  }
+
+  await sequelize.transaction(async (transaction) => {
+    const chunkIds = createdChunks.map((item) => item.id);
+    const existingStates = await KbChunkIndexState.findAll({
+      where: {
+        chunkId: {
+          [Op.in]: chunkIds
+        }
+      },
+      attributes: ['chunkId'],
       transaction
     });
-
-    createdChunks = await KbChunk.bulkCreate(
-      chunks.map((item, index) => ({
-        fileId: file.id,
-        chunkNo: index + 1,
-        chunkText: item.text,
-        tokenCount: Math.ceil(item.text.length / 4),
-        charCount: item.text.length,
-        startOffset: item.startOffset,
-        endOffset: item.endOffset,
-        chunkSha256: sha256(item.text),
-        metaJson: {
-          parser: fileExt === 'txt' ? 'txt_v1' : 'plain_text',
-          cleaner: fileExt,
-          version: 3,
-          headingPath: item.headingPath || []
-        }
-      })),
-      { transaction }
-    );
-
-    await KbChunkIndexState.bulkCreate(
-      createdChunks.map((chunk) => ({
-        chunkId: chunk.id,
+    const existingStateIds = new Set(existingStates.map((item) => Number(item.chunkId)));
+    const missingRows = chunkIds
+      .filter((id) => !existingStateIds.has(Number(id)))
+      .map((chunkId) => ({
+        chunkId,
         esStatus: 'pending',
         vectorStatus: 'pending'
-      })),
-      { transaction }
-    );
+      }));
+    if (missingRows.length) {
+      await KbChunkIndexState.bulkCreate(missingRows, { transaction });
+    }
   });
 
   await file.update({ status: 'indexing' });
 
+  const shouldResetIndexes = !reindexOnly;
   let esBootstrapError = null;
-  try {
-    // Ensure ES behaves as "replace on rebuild/ingest" by
-    // removing previous docs for the same file before indexing new chunks.
-    await deleteEsDocsByQuery({ fileId: file.id });
-  } catch (error) {
-    esBootstrapError = error;
+  if (shouldResetIndexes) {
+    try {
+      // Ensure ES behaves as "replace on rebuild/ingest" by
+      // removing previous docs for the same file before indexing new chunks.
+      await deleteEsDocsByQuery({ fileId: file.id });
+    } catch (error) {
+      esBootstrapError = error;
+    }
   }
 
-  let ragflowSession = { skipped: true, documentId: '' };
-  let ragflowBootstrapError = null;
+  const vectorSyncConfig = buildVectorSyncConfig();
+  const embeddingService = createEmbeddingService();
+  const vectorProvider = createQdrantVectorProvider({ embeddingService });
+  let vectorBootstrapError = null;
   try {
-    ragflowSession = buildRagflowChunkSession({ collection, file });
-    await clearRagflowDocumentChunks({
-      datasetId: ragflowSession.datasetId,
-      documentId: ragflowSession.documentId
-    });
+    if (vectorSyncConfig.enabled) {
+      await vectorProvider.ensureCollection();
+      if (shouldResetIndexes) {
+        await vectorProvider.deleteFileChunks({ fileId: file.id });
+      }
+    }
   } catch (error) {
-    ragflowBootstrapError = error;
+    vectorBootstrapError = error;
   }
-  let indexedCount = 0;
   const failedMessages = [];
+  const stateMap = new Map();
+  const vectorStats = {
+    planned: 0,
+    started: 0,
+    done: 0,
+    failed: 0,
+    retries: 0,
+    timeout: 0,
+    network: 0,
+    http4xx: 0,
+    http5xx: 0,
+    unknown: 0
+  };
+
+  // Phase 1: prioritize ES indexing so ES can finish even when vector sync is slow.
   for (const chunk of createdChunks) {
-    let chunkFailed = false;
     const state = await KbChunkIndexState.findOne({
       where: { chunkId: chunk.id }
     });
     if (!state) continue;
+    stateMap.set(Number(chunk.id), state);
 
+    const needsEsSync = !reindexOnly || state.esStatus !== 'done';
+    if (!needsEsSync) continue;
     try {
       if (esBootstrapError) throw esBootstrapError;
       const esResult = await syncChunkToEs({ file, chunk, tags: uniqueTags });
@@ -2028,7 +2636,6 @@ async function runIngestPipeline({ fileId, kbJobId, rawText = '' }) {
         esUpdatedAt: new Date()
       });
     } catch (error) {
-      chunkFailed = true;
       failedMessages.push(`chunk_${chunk.id}_es:${error.message}`);
       await state.update({
         esStatus: 'failed',
@@ -2037,32 +2644,123 @@ async function runIngestPipeline({ fileId, kbJobId, rawText = '' }) {
         esUpdatedAt: new Date()
       });
     }
+  }
 
-    try {
-      if (ragflowBootstrapError) throw ragflowBootstrapError;
-      const vectorResult = await syncChunkToRagflow({ ragflowSession, chunk, tags: uniqueTags });
+  // Phase 2: sync vector index with bounded concurrency.
+  const vectorCandidates = [];
+  for (const chunk of createdChunks) {
+    const state = stateMap.get(Number(chunk.id)) || await KbChunkIndexState.findOne({
+      where: { chunkId: chunk.id }
+    });
+    if (!state) continue;
+    const needsVectorSync = !reindexOnly || state.vectorStatus !== 'done';
+    if (!needsVectorSync) continue;
+    vectorCandidates.push({ chunk, state });
+  }
+  vectorStats.planned = vectorCandidates.length;
+  if (!vectorSyncConfig.enabled) {
+    for (const { state } of vectorCandidates) {
       await state.update({
         vectorStatus: 'done',
-        vectorDocId: vectorResult.vectorDocId || ragflowSession.documentId,
+        vectorDocId: null,
         lastErrorKey: null,
         lastError: null,
         vectorUpdatedAt: new Date()
       });
-    } catch (error) {
-      chunkFailed = true;
-      failedMessages.push(`chunk_${chunk.id}_vector:${error.message}`);
-      await state.update({
-        vectorStatus: 'failed',
-        lastErrorKey: 'kb.index.syncFailed',
-        lastError: `vector:${error.message}`,
-        vectorUpdatedAt: new Date()
-      });
     }
-
-    if (!chunkFailed) {
-      indexedCount += 1;
+  } else {
+    const vectorInputs = vectorCandidates.map(({ chunk }) => buildVectorChunkContent(chunk));
+    let vectors = [];
+    if (!vectorBootstrapError && vectorInputs.length) {
+      vectors = await embeddingService.embedDocuments(vectorInputs);
+      if (vectors.length !== vectorInputs.length) {
+        throw new Error(`embedding_result_count_mismatch:${vectors.length}:${vectorInputs.length}`);
+      }
     }
+    const vectorJobs = vectorCandidates.map((item, index) => ({
+      ...item,
+      vector: vectors[index] || []
+    }));
+    await runWithWorkerPool(
+      vectorJobs,
+      vectorSyncConfig.vectorSyncConcurrency,
+      async ({ chunk, state, vector }) => {
+        const vectorStartAt = Date.now();
+        vectorStats.started += 1;
+        logKbVector('info', 'sync_start', {
+          fileId: file.id,
+          chunkId: chunk.id,
+          chunkNo: chunk.chunkNo,
+          reindexOnly,
+          concurrency: vectorSyncConfig.vectorSyncConcurrency
+        });
+        try {
+          if (vectorBootstrapError) throw vectorBootstrapError;
+          if (!Array.isArray(vector) || !vector.length) {
+            throw new Error('embedding_vector_empty');
+          }
+          await vectorProvider.upsertChunks({
+            file,
+            chunks: [chunk],
+            tags: uniqueTags,
+            vectors: [vector]
+          });
+          await state.update({
+            vectorStatus: 'done',
+            vectorDocId: String(chunk.id),
+            lastErrorKey: null,
+            lastError: null,
+            vectorUpdatedAt: new Date()
+          });
+          logKbVector('info', 'sync_done', {
+            fileId: file.id,
+            chunkId: chunk.id,
+            chunkNo: chunk.chunkNo,
+            elapsedMs: Date.now() - vectorStartAt
+          });
+          vectorStats.done += 1;
+        } catch (error) {
+          failedMessages.push(`chunk_${chunk.id}_vector:${error.message}`);
+          await state.update({
+            vectorStatus: 'failed',
+            lastErrorKey: 'kb.index.syncFailed',
+            lastError: `vector:${error.message}`,
+            vectorUpdatedAt: new Date()
+          });
+          logKbVector('error', 'sync_failed', {
+            fileId: file.id,
+            chunkId: chunk.id,
+            chunkNo: chunk.chunkNo,
+            elapsedMs: Date.now() - vectorStartAt,
+            error: String(error?.message || error || '')
+          });
+          vectorStats.failed += 1;
+          if (String(error?.message || '').includes('timeout')) vectorStats.timeout += 1;
+          else if (String(error?.message || '').includes('qdrant_request_failed:4')) vectorStats.http4xx += 1;
+          else if (String(error?.message || '').includes('qdrant_request_failed:5')) vectorStats.http5xx += 1;
+          else vectorStats.unknown += 1;
+        }
+      }
+    );
   }
+  logKbVector('info', 'sync_summary', {
+    fileId: file.id,
+    reindexOnly,
+    concurrency: vectorSyncConfig.vectorSyncConcurrency,
+    ...vectorStats
+  });
+
+  const finalStates = await KbChunkIndexState.findAll({
+    where: {
+      chunkId: {
+        [Op.in]: createdChunks.map((chunk) => chunk.id)
+      }
+    },
+    attributes: ['esStatus', 'vectorStatus']
+  });
+  const indexedCount = countIndexedStates(finalStates, {
+    requireVectorSync: vectorSyncConfig.enabled
+  });
 
   if (failedMessages.length) {
     const message = failedMessages.slice(0, 3).join('; ');
@@ -2230,8 +2928,13 @@ module.exports = {
   rebuildFile,
   getFileDownloadInfo,
   submitIngestTask,
+  rollbackFailedIngestCreation,
   getJobStatus,
+  retrievalDebug,
   runIngestPipeline,
+  runWithBackoffRetry,
+  splitStructuredBlocksToChunks,
+  buildVectorChunkContent,
   listStandardTags,
   listTagAliases,
   approveTagAlias,

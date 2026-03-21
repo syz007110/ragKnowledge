@@ -14,6 +14,7 @@ const {
   getFileDownloadInfo,
   submitIngestTask,
   getJobStatus,
+  retrievalDebug,
   normalizeFileExt,
   validateCollectionTags,
   listStandardTags,
@@ -25,11 +26,19 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const kbStorage = require('../config/kbStorage');
+const {
+  buildStorageConfig,
+  isS3Uri,
+  buildUploadObjectKey,
+  uploadLocalFile,
+  getObjectBufferByUri,
+  deleteObjectByUri
+} = require('../services/objectStorageService');
 
 function safeUnlink(fp) {
   try {
     if (fp && fs.existsSync(fp)) fs.unlinkSync(fp);
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function sha256File(fp) {
@@ -45,8 +54,10 @@ function sha256File(fp) {
 function normalizeExtByFilename(name = '') {
   const ext = path.extname(String(name)).toLowerCase();
   if (ext === '.docx') return 'docx';
+  if (ext === '.xlsx') return 'xlsx';
   if (ext === '.md' || ext === '.markdown') return 'md';
   if (ext === '.txt') return 'txt';
+  if (ext === '.pdf') return 'pdf';
   return '';
 }
 
@@ -63,6 +74,47 @@ function normalizeUploadFileName(name = '') {
     return raw;
   } catch (_) {
     return raw;
+  }
+}
+
+function validateDirectIngestRequest({
+  storageUri = '',
+  rawText = ''
+} = {}) {
+  if (String(storageUri || '').trim()) {
+    return {
+      valid: false,
+      reasonKey: 'kb.storageUriNotAllowed'
+    };
+  }
+  if (!String(rawText || '').trim()) {
+    return {
+      valid: false,
+      reasonKey: 'kb.rawTextRequired'
+    };
+  }
+  return { valid: true };
+}
+
+async function cleanupStoredUpload({
+  localPath = '',
+  storageUri = '',
+  unlinkFn = async (target) => safeUnlink(target),
+  deleteObjectFn = deleteObjectByUri
+} = {}) {
+  if (localPath) {
+    await unlinkFn(localPath);
+    return;
+  }
+  if (isS3Uri(storageUri)) {
+    await deleteObjectFn(storageUri);
+  }
+}
+
+function removePendingStoredUpload(items = [], target = null) {
+  const index = items.indexOf(target);
+  if (index >= 0) {
+    items.splice(index, 1);
   }
 }
 
@@ -342,9 +394,19 @@ async function createIngestTask(req, res, next) {
     if (!fileName.trim()) {
       return res.status(400).json({ messageKey: 'kb.fileNameRequired', message: req.t('kb.fileNameRequired') });
     }
+    const validation = validateDirectIngestRequest({
+      storageUri,
+      rawText
+    });
+    if (!validation.valid) {
+      return res.status(400).json({
+        messageKey: validation.reasonKey,
+        message: req.t(validation.reasonKey)
+      });
+    }
 
     const ext = normalizeFileExt(fileName, fileExt);
-    if (!['md', 'txt', 'docx'].includes(ext)) {
+    if (!['md', 'txt', 'docx', 'xlsx', 'pdf'].includes(ext)) {
       return res.status(400).json({ messageKey: 'kb.fileExtUnsupported', message: req.t('kb.fileExtUnsupported') });
     }
 
@@ -390,6 +452,34 @@ async function createIngestTask(req, res, next) {
   }
 }
 
+async function retrievalDebugItem(req, res, next) {
+  try {
+    const {
+      collectionId,
+      query = '',
+      esTopK = 5,
+      vecTopK = 5,
+      fuseTopK = 5
+    } = req.body || {};
+    if (!collectionId) {
+      return res.status(400).json({ messageKey: 'kb.collectionIdRequired', message: req.t('kb.collectionIdRequired') });
+    }
+    if (!String(query || '').trim()) {
+      return res.status(400).json({ messageKey: 'kb.queryRequired', message: req.t('kb.queryRequired') });
+    }
+    const result = await retrievalDebug({
+      collectionId: Number(collectionId),
+      query: String(query || ''),
+      esTopK: Number(esTopK) || 5,
+      vecTopK: Number(vecTopK) || 5,
+      fuseTopK: Number(fuseTopK) || 5
+    });
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+}
+
 async function uploadCollectionFiles(req, res, next) {
   const uploadedFiles = Array.isArray(req.files) ? req.files : [];
   const collectionId = Number(req.params.id);
@@ -400,9 +490,20 @@ async function uploadCollectionFiles(req, res, next) {
   if (!uploadedFiles.length) {
     return res.status(400).json({ messageKey: 'kb.fileNameRequired', message: req.t('kb.fileNameRequired') });
   }
+  if (uploadedFiles.length > kbStorage.BATCH_MAX_FILES) {
+    uploadedFiles.forEach((f) => safeUnlink(f.path));
+    return res.status(400).json({ messageKey: 'kb.uploadLimitExceeded', message: req.t('kb.uploadLimitExceeded') });
+  }
+  const batchTotalBytes = uploadedFiles.reduce((sum, current) => sum + Number(current?.size || 0), 0);
+  if (batchTotalBytes > kbStorage.BATCH_MAX_TOTAL_SIZE) {
+    uploadedFiles.forEach((f) => safeUnlink(f.path));
+    return res.status(400).json({ messageKey: 'kb.uploadLimitExceeded', message: req.t('kb.uploadLimitExceeded') });
+  }
+  const pendingStoredUploads = [];
 
   try {
     kbStorage.ensureLocalDir();
+    const objectStorageConfig = buildStorageConfig();
     const uploadMode = String(req.body?.uploadMode || 'normal');
     const accepted = [];
     const reused = [];
@@ -417,12 +518,50 @@ async function uploadCollectionFiles(req, res, next) {
         continue;
       }
 
+      const stageStartAt = Date.now();
       const contentSha256 = await sha256File(file.path);
-      const safeBase = path.basename(originalName, path.extname(originalName)).replace(/[^\w\u4e00-\u9fa5.-]+/g, '_').slice(0, 80) || 'kb';
-      const finalName = `${safeBase}-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(originalName).toLowerCase()}`;
-      const finalPath = path.resolve(kbStorage.LOCAL_DIR, finalName);
-      await fs.promises.rename(file.path, finalPath);
+      console.log('[KB上传] hash_done', {
+        fileName: originalName,
+        size: Number(file.size || 0),
+        elapsedMs: Date.now() - stageStartAt
+      });
+      let storageUri = '';
+      let localPath = '';
+      let storedUpload = null;
+      const storageStartAt = Date.now();
+      if (objectStorageConfig.enabled) {
+        const objectKey = buildUploadObjectKey({
+          collectionId,
+          fileName: originalName
+        });
+        storageUri = await uploadLocalFile({
+          localPath: file.path,
+          objectKey,
+          contentType: file.mimetype || ''
+        });
+        safeUnlink(file.path);
+        console.log('[KB上传] minio_done', {
+          fileName: originalName,
+          storageUri,
+          elapsedMs: Date.now() - storageStartAt
+        });
+      } else {
+        const safeBase = path.basename(originalName, path.extname(originalName)).replace(/[^\w\u4e00-\u9fa5.-]+/g, '_').slice(0, 80) || 'kb';
+        const finalName = `${safeBase}-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(originalName).toLowerCase()}`;
+        const finalPath = path.resolve(kbStorage.LOCAL_DIR, finalName);
+        await fs.promises.rename(file.path, finalPath);
+        storageUri = `file://${finalPath}`;
+        localPath = finalPath;
+        console.log('[KB上传] local_store_done', {
+          fileName: originalName,
+          storageUri,
+          elapsedMs: Date.now() - storageStartAt
+        });
+      }
+      storedUpload = { storageUri, localPath };
+      pendingStoredUploads.push(storedUpload);
 
+      const enqueueStartAt = Date.now();
       const result = await submitIngestTask({
         collectionId,
         fileName: originalName,
@@ -430,26 +569,38 @@ async function uploadCollectionFiles(req, res, next) {
         mimeType: file.mimetype || '',
         fileSize: file.size || 0,
         uploadMode,
-        storageUri: `file://${finalPath}`,
+        storageUri,
         contentSha256,
         metadata: {
           source: 'upload',
-          localPath: finalPath
+          localPath
         },
         user: req.user,
         locale: req.locale
       });
+      console.log('[KB上传] enqueued', {
+        fileName: originalName,
+        elapsedMs: Date.now() - enqueueStartAt,
+        totalElapsedMs: Date.now() - stageStartAt,
+        dedupReused: Boolean(result?.dedupReused),
+        rejected: Boolean(result?.rejected),
+        taskId: Number(result?.jobRecord?.id || 0),
+        queueJobId: String(result?.queueJobId || '')
+      });
 
       if (result.rejected) {
-        safeUnlink(finalPath);
+        await cleanupStoredUpload(storedUpload);
+        removePendingStoredUpload(pendingStoredUploads, storedUpload);
         failed.push({ fileName: originalName, reason: req.t(result.reasonKey) });
         continue;
       }
       if (result.dedupReused) {
-        safeUnlink(finalPath);
+        await cleanupStoredUpload(storedUpload);
+        removePendingStoredUpload(pendingStoredUploads, storedUpload);
         reused.push({ fileName: originalName, file: result.file });
         continue;
       }
+      removePendingStoredUpload(pendingStoredUploads, storedUpload);
       accepted.push({
         fileName: originalName,
         file: result.file,
@@ -466,6 +617,7 @@ async function uploadCollectionFiles(req, res, next) {
       failed
     });
   } catch (error) {
+    await Promise.allSettled(pendingStoredUploads.map((item) => cleanupStoredUpload(item)));
     uploadedFiles.forEach((f) => safeUnlink(f.path));
     return next(error);
   }
@@ -580,15 +732,22 @@ async function downloadFileItem(req, res, next) {
     const { file, localPath } = result;
     const encodedFileName = encodeURIComponent(String(file.fileName || 'download'));
     const asciiFileName = buildAsciiFileName(file.fileName || 'download');
-    if (!fs.existsSync(localPath)) {
-      return res.status(404).json({ messageKey: 'kb.fileNotFound', message: req.t('kb.fileNotFound') });
-    }
     res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
     if (Number(file.fileSize || 0) > 0) {
       res.setHeader('Content-Length', String(file.fileSize));
     }
     res.setHeader('Content-Disposition', `attachment; filename="${asciiFileName}"; filename*=UTF-8''${encodedFileName}`);
-    return res.sendFile(localPath);
+    if (localPath) {
+      if (!fs.existsSync(localPath)) {
+        return res.status(404).json({ messageKey: 'kb.fileNotFound', message: req.t('kb.fileNotFound') });
+      }
+      return res.sendFile(localPath);
+    }
+    if (isS3Uri(file.storageUri)) {
+      const buffer = await getObjectBufferByUri(file.storageUri);
+      return res.send(buffer);
+    }
+    return res.status(404).json({ messageKey: 'kb.fileNotFound', message: req.t('kb.fileNotFound') });
   } catch (error) {
     if (error.message === 'kb.fileNotFound') {
       return res.status(404).json({ messageKey: 'kb.fileNotFound', message: req.t('kb.fileNotFound') });
@@ -609,6 +768,7 @@ module.exports = {
   getCollectionFiles,
   uploadCollectionFiles,
   createIngestTask,
+  retrievalDebugItem,
   getTaskStatus,
   renameFileItem,
   deleteFileItem,
@@ -617,5 +777,7 @@ module.exports = {
   listStandardTagItems,
   listTagAliasItems,
   approveTagAliasItem,
-  rejectTagAliasItem
+  rejectTagAliasItem,
+  validateDirectIngestRequest,
+  cleanupStoredUpload
 };

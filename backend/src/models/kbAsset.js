@@ -1,6 +1,6 @@
 const { DataTypes } = require('sequelize');
 
-module.exports = (sequelize) => sequelize.define('kbChunk', {
+module.exports = (sequelize) => sequelize.define('kbAsset', {
   id: {
     type: DataTypes.BIGINT,
     primaryKey: true,
@@ -11,36 +11,38 @@ module.exports = (sequelize) => sequelize.define('kbChunk', {
     allowNull: false,
     field: 'file_id'
   },
-  chunkNo: {
-    type: DataTypes.INTEGER,
+  assetType: {
+    type: DataTypes.STRING(16),
     allowNull: false,
-    field: 'chunk_no'
+    defaultValue: 'image',
+    field: 'asset_type'
   },
-  chunkText: {
-    type: DataTypes.TEXT('medium'),
+  storageUri: {
+    type: DataTypes.STRING(500),
     allowNull: false,
-    field: 'chunk_text'
+    field: 'storage_uri'
   },
-  tokenCount: {
-    type: DataTypes.INTEGER,
-    field: 'token_count'
+  mimeType: {
+    type: DataTypes.STRING(128),
+    field: 'mime_type'
   },
-  charCount: {
-    type: DataTypes.INTEGER,
-    field: 'char_count'
-  },
-  startOffset: {
-    type: DataTypes.INTEGER,
-    field: 'start_offset'
-  },
-  endOffset: {
-    type: DataTypes.INTEGER,
-    field: 'end_offset'
-  },
-  chunkSha256: {
+  assetSha256: {
     type: DataTypes.STRING(64),
-    allowNull: false,
-    field: 'chunk_sha256'
+    field: 'asset_sha256'
+  },
+  width: {
+    type: DataTypes.INTEGER
+  },
+  height: {
+    type: DataTypes.INTEGER
+  },
+  sourcePageNo: {
+    type: DataTypes.INTEGER,
+    field: 'source_page_no'
+  },
+  sourceRef: {
+    type: DataTypes.STRING(128),
+    field: 'source_ref'
   },
   metaJson: {
     type: DataTypes.JSON,
@@ -57,7 +59,7 @@ module.exports = (sequelize) => sequelize.define('kbChunk', {
     field: 'deleted_at'
   }
 }, {
-  tableName: 'kb_chunk',
+  tableName: 'kb_asset',
   underscored: true,
   timestamps: true
 });
