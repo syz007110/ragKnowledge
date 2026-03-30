@@ -57,10 +57,23 @@ export default {
     getTaskStatus(taskId) {
       return http.get(`/api/kb/ingest-tasks/${taskId}`);
     },
-    downloadFile(fileId) {
+    downloadFile(fileId, options = {}) {
+      const params = options.inline ? { inline: '1' } : {};
       return http.get(`/api/kb/files/${fileId}/download`, {
+        responseType: 'blob',
+        params
+      });
+    },
+    getFilePreview(fileId) {
+      return http.get(`/api/kb/files/${fileId}/preview`);
+    },
+    getFileAsset(fileId, assetId) {
+      return http.get(`/api/kb/files/${fileId}/assets/${assetId}`, {
         responseType: 'blob'
       });
+    },
+    getOnlyofficeConfig(fileId, params = {}) {
+      return http.get(`/api/kb/files/${fileId}/onlyoffice-config`, { params });
     },
     renameFile(fileId, payload) {
       return http.put(`/api/kb/files/${fileId}`, payload);

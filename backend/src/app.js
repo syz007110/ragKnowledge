@@ -3,6 +3,7 @@ const cors = require('cors');
 
 const healthRouter = require('./routes/health');
 const kbRouter = require('./routes/kb');
+const kbOnlyofficePublicRouter = require('./routes/kbOnlyofficePublic');
 const authRouter = require('./routes/auth');
 const { localeMiddleware } = require('./middlewares/locale');
 
@@ -22,6 +23,7 @@ app.get('/', (req, res) => {
 
 app.use('/health', healthRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/kb/onlyoffice', kbOnlyofficePublicRouter);
 app.use('/api/kb', kbRouter);
 
 app.use((error, req, res, next) => {

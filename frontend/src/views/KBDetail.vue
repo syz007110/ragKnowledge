@@ -3,8 +3,8 @@
     <KBTopNav breadcrumb-only>
       <template #breadcrumb>
         <nav class="breadcrumb">
-          <router-link to="/workspace" class="breadcrumb-link">{{ t('nav.home') }}</router-link>
-          <span class="breadcrumb-sep">-</span>
+          <router-link to="/workspace" class="breadcrumb-link">{{ t('detail.breadcrumbWorkbench') }}</router-link>
+          <span class="breadcrumb-sep">/</span>
           <span class="breadcrumb-current">{{ detail.title }}</span>
         </nav>
       </template>
@@ -18,7 +18,11 @@
         <div class="head-main">
           <div class="title-row">
             <h1 class="title">{{ detail.title }}</h1>
-            <span class="id-tag">ID: {{ detail.id }}</span>
+            <div class="title-meta">
+              <span class="id-tag">ID: {{ detail.id }}</span>
+              <span class="meta-sep" aria-hidden="true">|</span>
+              <span class="doc-count-badge">{{ t('detail.docCountBadge', { count: total }) }}</span>
+            </div>
           </div>
           <p class="desc">{{ detail.description }}</p>
         </div>
@@ -58,6 +62,7 @@
           </div>
         </div>
 
+        <div class="table-scroll-wrap">
         <el-table :data="docs" style="width: 100%" class="doc-table">
           <el-table-column :label="t('detail.fileName')" min-width="200">
             <template #default="{ row }">
@@ -69,10 +74,17 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="uploadedAt" :label="t('detail.uploadedAt')" width="160" min-width="140" />
+          <el-table-column :label="t('detail.uploadedAt')" width="160" min-width="140">
+            <template #default="{ row }">
+              <span class="cell-mono">{{ row.uploadedAt }}</span>
+            </template>
+          </el-table-column>
           <el-table-column :label="t('detail.status')" width="128" min-width="100">
             <template #default="{ row }">
               <span class="status-tag" :class="row.status">
+                <el-icon v-if="row.status === 'success'" class="status-tag__icon"><CircleCheck /></el-icon>
+                <el-icon v-else-if="row.status === 'failed'" class="status-tag__icon"><CircleClose /></el-icon>
+                <el-icon v-else-if="row.status === 'processing'" class="status-tag__icon is-spin"><Loading /></el-icon>
                 {{ row.statusDisplayText }}
               </span>
             </template>
@@ -91,17 +103,50 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column :label="t('detail.actions')" width="260" min-width="260" align="right" fixed="right">
+          <el-table-column :label="t('detail.actions')" width="220" min-width="200" align="left">
             <template #default="{ row }">
               <div class="action-buttons">
-                <el-button text size="small" @click="rebuildFile(row)">{{ t('detail.rebuild') }}</el-button>
-                <el-button text size="small" @click="renameFileRow(row)">{{ t('detail.rename') }}</el-button>
-                <el-button text size="small" @click="downloadFile(row)">{{ t('detail.download') }}</el-button>
-                <el-button text size="small" type="danger" @click="removeFile(row)">{{ t('detail.delete') }}</el-button>
+                <el-tooltip :content="t('detail.preview')" placement="top">
+                  <el-button
+                    text
+                    class="action-icon-btn"
+                    :disabled="row.status !== 'success'"
+                    :aria-label="t('detail.preview')"
+                    @click.stop="openPreview(row)"
+                  >
+                    <el-icon :size="16"><View /></el-icon>
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip :content="t('detail.rebuild')" placement="top">
+                  <el-button
+                    text
+                    class="action-icon-btn"
+                    :aria-label="t('detail.rebuild')"
+                    @click.stop="rebuildFile(row)"
+                  >
+                    <el-icon :size="16"><RefreshRight /></el-icon>
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip :content="t('detail.rename')" placement="top">
+                  <el-button text class="action-icon-btn" :aria-label="t('detail.rename')" @click.stop="renameFileRow(row)">
+                    <el-icon :size="16"><EditPen /></el-icon>
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip :content="t('detail.download')" placement="top">
+                  <el-button text class="action-icon-btn" :aria-label="t('detail.download')" @click.stop="downloadFile(row)">
+                    <el-icon :size="16"><Download /></el-icon>
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip :content="t('detail.delete')" placement="top">
+                  <el-button text type="danger" class="action-icon-btn" :aria-label="t('detail.delete')" @click.stop="removeFile(row)">
+                    <el-icon :size="16"><Delete /></el-icon>
+                  </el-button>
+                </el-tooltip>
               </div>
             </template>
           </el-table-column>
         </el-table>
+        </div>
         <div class="pager-wrap">
           <span class="pager-total">{{ t('detail.paginationTotal', { total }) }}</span>
           <el-pagination
@@ -202,20 +247,188 @@
           <el-button type="primary" :loading="askDialog.loading" @click="submitAskDebug">{{ t('detail.askSubmit') }}</el-button>
         </template>
       </el-dialog>
+
+      <el-drawer
+        v-model="preview.visible"
+        direction="rtl"
+        class="kb-preview-drawer"
+        modal-class="kb-drawer-overlay"
+        destroy-on-close
+        :close-on-click-modal="true"
+        :show-close="false"
+        @closed="onPreviewDrawerClosed"
+      >
+        <template #header="{ close, titleId, titleClass }">
+          <div class="preview-drawer-header" :id="titleId" :class="titleClass">
+            <div class="preview-drawer-header__icon">
+              <el-icon :size="22"><Document /></el-icon>
+            </div>
+            <div class="preview-drawer-header__text">
+              <div class="preview-drawer-header__title">{{ previewFileLabel || t('detail.previewTitle') }}</div>
+              <div class="preview-drawer-header__sub">{{ t('detail.previewSubtitle') }}</div>
+            </div>
+            <button type="button" class="preview-drawer-header__close" :aria-label="t('common.cancel')" @click="close">
+              <el-icon :size="18"><Close /></el-icon>
+            </button>
+          </div>
+        </template>
+        <div v-if="preview.loading" class="preview-loading">
+          <el-icon class="is-loading" :size="28"><Loading /></el-icon>
+          <span>{{ t('detail.previewLoading') }}</span>
+        </div>
+        <div v-else-if="preview.errorMessage" class="preview-error">
+          {{ preview.errorMessage }}
+        </div>
+        <div v-else-if="preview.data?.previewable" class="preview-body">
+          <div class="preview-toolbar">
+            <label class="preview-overlay-label">
+              <span>{{ t('detail.previewChunkOverlay') }}</span>
+              <el-switch
+                v-model="preview.chunkOverlay"
+                :disabled="['pdf', 'docx', 'xlsx'].includes(preview.data.previewMode)"
+              />
+            </label>
+            <span v-if="preview.data.sourceTruncated && preview.data.previewMode === 'text'" class="preview-trunc-hint">{{ t('detail.previewTruncated') }}</span>
+            <span v-if="preview.data.previewMode === 'pdf'" class="preview-pdf-hint">{{ preview.useOnlyoffice ? t('detail.previewOnlyofficePdfHint') : t('detail.previewPdfOverlayHint') }}</span>
+            <span v-else-if="['docx', 'xlsx'].includes(preview.data.previewMode)" class="preview-pdf-hint">{{ preview.useOnlyoffice ? t('detail.previewOnlyofficeOfficeHint') : t('detail.previewOfficeOverlayHint') }}</span>
+          </div>
+          <div class="preview-panels">
+            <div class="preview-panel preview-panel--left">
+              <div class="preview-panel-title preview-panel-title--toolbar">
+                <span>{{ t('detail.previewLeftTitle') }}</span>
+                <span v-if="['pdf', 'docx', 'xlsx'].includes(preview.data.previewMode)" class="preview-panel-title__mode">
+                  {{ t('detail.previewSourceFile') }}
+                </span>
+              </div>
+              <div class="preview-panel-body">
+                <div
+                  v-if="
+                    preview.data.previewMode === 'pdf' &&
+                    (preview.pdfObjectUrl || (preview.useOnlyoffice && preview.ooMountId))
+                  "
+                  class="preview-page-stack"
+                >
+                  <div class="preview-page-canvas">
+                    <div
+                      v-if="preview.useOnlyoffice && preview.ooMountId"
+                      :key="preview.ooMountId"
+                      :id="preview.ooMountId"
+                      class="preview-onlyoffice preview-onlyoffice--canvas"
+                    />
+                    <iframe
+                      v-else-if="preview.pdfObjectUrl"
+                      class="preview-iframe preview-iframe--canvas"
+                      title="pdf-preview"
+                      :src="preview.pdfObjectUrl"
+                    />
+                  </div>
+                </div>
+                <div
+                  v-else-if="preview.useOnlyoffice && preview.ooMountId"
+                  :key="preview.ooMountId"
+                  :id="preview.ooMountId"
+                  class="preview-onlyoffice"
+                />
+                <div
+                  v-else-if="preview.data.previewMode === 'docx'"
+                  ref="docxPreviewRef"
+                  class="preview-office preview-office--docx"
+                />
+                <div
+                  v-else-if="preview.data.previewMode === 'xlsx'"
+                  ref="xlsxPreviewRef"
+                  class="preview-office preview-office--xlsx"
+                />
+                <div
+                  v-else-if="preview.data.previewMode === 'text'"
+                  class="preview-text-scroll"
+                >
+                  <template v-if="preview.chunkOverlay">
+                    <span
+                      v-for="(seg, idx) in previewTextSegments"
+                      :key="`seg-${idx}`"
+                      class="preview-seg"
+                      :class="{
+                        'preview-seg--hl': seg.chunkId != null,
+                        'preview-seg--sel': seg.selected
+                      }"
+                      @click="seg.chunkId != null && selectPreviewChunk(seg.chunkId)"
+                    >{{ seg.text }}</span>
+                  </template>
+                  <pre v-else class="preview-pre">{{ preview.data.sourceText }}</pre>
+                </div>
+              </div>
+            </div>
+            <div class="preview-panel preview-panel--right">
+              <div class="preview-panel-title preview-panel-title--split">
+                <span>{{ t('detail.previewRightTitle') }}</span>
+                <span class="preview-chunk-total">{{ t('detail.previewChunkTotal', { count: (preview.data.chunks || []).length }) }}</span>
+              </div>
+              <el-scrollbar class="preview-chunk-list">
+                <div
+                  v-for="ch in preview.data.chunks"
+                  :key="ch.id"
+                  :ref="(el) => setChunkCardRef(ch.id, el)"
+                  class="preview-chunk-card"
+                  :class="{ 'preview-chunk-card--active': Number(preview.selectedChunkId) === Number(ch.id) }"
+                  @click="selectPreviewChunk(ch.id)"
+                >
+                  <div class="preview-chunk-meta">
+                    <div class="preview-chunk-meta__main">
+                      <span class="preview-chunk-no">c{{ ch.chunkNo }}</span>
+                      <span v-if="(ch.headingPath || []).length" class="preview-chunk-path">{{ (ch.headingPath || []).join(' / ') }}</span>
+                    </div>
+                    <span class="preview-chunk-chars">{{ t('detail.previewChunkChars', { n: (ch.chunkText || '').length }) }}</span>
+                  </div>
+                  <div class="preview-chunk-text">{{ ch.chunkText }}</div>
+                  <div
+                    v-if="sortedChunkPreviewAssets(ch).length"
+                    class="preview-chunk-assets"
+                  >
+                    <template v-for="a in sortedChunkPreviewAssets(ch)" :key="a.id">
+                      <PreviewChunkAssetImg
+                        v-if="isChunkPreviewAssetImage(a)"
+                        :file-id="Number(preview.data.file.id)"
+                        :asset-id="Number(a.id)"
+                      />
+                    </template>
+                  </div>
+                </div>
+              </el-scrollbar>
+            </div>
+          </div>
+        </div>
+      </el-drawer>
     </main>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { ArrowLeft, Document, Setting, Upload } from '@element-plus/icons-vue';
+import {
+  ArrowLeft,
+  CircleCheck,
+  CircleClose,
+  Close,
+  Delete,
+  Document,
+  Download,
+  EditPen,
+  Loading,
+  RefreshRight,
+  Setting,
+  Upload,
+  View
+} from '@element-plus/icons-vue';
 import { useI18n } from 'vue-i18n';
 import KBTopNav from '../components/KBTopNav.vue';
+import PreviewChunkAssetImg from '../components/PreviewChunkAssetImg.vue';
 import { isAdmin as checkIsAdmin } from '../utils/auth';
 import api from '../api';
 import websocketClient from '../services/websocketClient';
+import { renderDocxPreview, renderXlsxPreview } from '../utils/kbOfficePreview';
 
 const route = useRoute();
 const isAdmin = computed(() => checkIsAdmin());
@@ -230,11 +443,28 @@ const askDialog = ref({
   visible: false,
   loading: false,
   query: '',
-  esTopK: 5,
-  vecTopK: 5,
-  fuseTopK: 5,
+  esTopK: 20,
+  vecTopK: 20,
+  fuseTopK: 20,
   result: null
 });
+const preview = ref({
+  visible: false,
+  loading: false,
+  data: null,
+  errorMessage: '',
+  pdfObjectUrl: '',
+  officeArrayBuffer: null,
+  chunkOverlay: true,
+  selectedChunkId: null,
+  useOnlyoffice: false,
+  ooBundle: null,
+  ooMountId: ''
+});
+const docxPreviewRef = ref(null);
+const xlsxPreviewRef = ref(null);
+let onlyofficeDocEditor = null;
+const chunkCardRefs = new Map();
 const uploadItems = ref([]);
 const wsConnectionStatus = ref('disconnected');
 const activeTaskIds = new Set();
@@ -256,6 +486,49 @@ const wsStatusText = computed(() => {
   if (wsConnectionStatus.value === 'connecting') return 'WS连接中';
   return 'WS未连接';
 });
+
+const previewFileLabel = computed(() => {
+  const f = preview.value.data?.file;
+  if (!f) return '';
+  return f.fileName || f.name || '';
+});
+
+const previewTextSegments = computed(() => {
+  const data = preview.value.data;
+  if (!data?.sourceText || data.previewMode !== 'text' || !preview.value.chunkOverlay) return [];
+  return buildPreviewSegments(
+    data.sourceText,
+    data.chunks || [],
+    preview.value.selectedChunkId
+  );
+});
+
+function buildPreviewSegments(sourceText, chunks, selectedChunkId) {
+  const sorted = [...chunks].sort(
+    (a, b) => (Number(a.startOffset) || 0) - (Number(b.startOffset) || 0)
+  );
+  let cursor = 0;
+  const segments = [];
+  for (const ch of sorted) {
+    let s = Math.max(0, Math.min(Number(ch.startOffset) || 0, sourceText.length));
+    let e = Math.max(s, Math.min(Number(ch.endOffset) || 0, sourceText.length));
+    if (s < cursor) s = cursor;
+    if (e <= s) continue;
+    if (cursor < s) {
+      segments.push({ text: sourceText.slice(cursor, s), chunkId: null, selected: false });
+    }
+    segments.push({
+      text: sourceText.slice(s, e),
+      chunkId: ch.id,
+      selected: Number(ch.id) === Number(selectedChunkId)
+    });
+    cursor = e;
+  }
+  if (cursor < sourceText.length) {
+    segments.push({ text: sourceText.slice(cursor), chunkId: null, selected: false });
+  }
+  return segments;
+}
 
 function scheduleLoadFiles() {
   if (loadDebounceTimer) clearTimeout(loadDebounceTimer);
@@ -539,6 +812,224 @@ async function removeFile(row) {
   await loadFiles();
 }
 
+function setChunkCardRef(id, el) {
+  const key = Number(id);
+  if (!el) {
+    chunkCardRefs.delete(key);
+    return;
+  }
+  chunkCardRefs.set(key, el);
+}
+
+function sortedChunkPreviewAssets(ch) {
+  const list = Array.isArray(ch?.assets) ? ch.assets : [];
+  return [...list].sort((a, b) => (Number(a.sortNo) || 0) - (Number(b.sortNo) || 0));
+}
+
+function isChunkPreviewAssetImage(a) {
+  const m = String(a?.mimeType || '').toLowerCase();
+  if (m.startsWith('image/')) return true;
+  return String(a?.assetType || '') === 'image';
+}
+
+function selectPreviewChunk(id) {
+  preview.value.selectedChunkId = id;
+  const el = chunkCardRefs.get(Number(id));
+  if (el?.scrollIntoView) {
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+function destroyOnlyofficeEditor() {
+  if (onlyofficeDocEditor && typeof onlyofficeDocEditor.destroyEditor === 'function') {
+    try {
+      onlyofficeDocEditor.destroyEditor();
+    } catch (_) {
+      /* drawer may have removed container */
+    }
+  }
+  onlyofficeDocEditor = null;
+}
+
+function trimOnlyofficeBaseUrl(url) {
+  return String(url || '').replace(/\/+$/, '');
+}
+
+function loadOnlyofficeScript(baseUrl) {
+  if (typeof window !== 'undefined' && window.DocsAPI) {
+    return Promise.resolve();
+  }
+  const src = `${trimOnlyofficeBaseUrl(baseUrl)}/web-apps/apps/api/documents/api.js`;
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('onlyoffice script load failed'));
+    document.head.appendChild(s);
+  });
+}
+
+async function ensureLegacyOfficeBinary(row, payload) {
+  if (payload.previewMode === 'pdf' && !preview.value.pdfObjectUrl) {
+    const dl = await api.kb.downloadFile(row.id, { inline: true });
+    const blob = new Blob([dl.data], { type: payload.file?.mimeType || 'application/pdf' });
+    preview.value.pdfObjectUrl = window.URL.createObjectURL(blob);
+  } else if (
+    (payload.previewMode === 'docx' || payload.previewMode === 'xlsx')
+    && !preview.value.officeArrayBuffer
+  ) {
+    const dl = await api.kb.downloadFile(row.id);
+    preview.value.officeArrayBuffer = await dl.data.arrayBuffer();
+  }
+}
+
+async function renderLegacyOfficeIfNeeded() {
+  const mode = preview.value.data?.previewMode;
+  const ab = preview.value.officeArrayBuffer;
+  if (mode === 'docx' && !docxPreviewRef.value) await nextTick();
+  if (mode === 'xlsx' && !xlsxPreviewRef.value) await nextTick();
+  try {
+    if (mode === 'docx' && docxPreviewRef.value && ab) {
+      await renderDocxPreview(docxPreviewRef.value, ab);
+    } else if (mode === 'xlsx' && xlsxPreviewRef.value && ab) {
+      renderXlsxPreview(xlsxPreviewRef.value, ab);
+    }
+  } catch (err) {
+    console.error('[preview] office render failed', err);
+    ElMessage.error(t('detail.previewOfficeRenderFailed'));
+  }
+}
+
+/**
+ * @returns {Promise<boolean>}
+ */
+async function mountOnlyofficePreview() {
+  const bundle = preview.value.ooBundle;
+  const mountId = preview.value.ooMountId;
+  if (!bundle?.documentServerUrl || !bundle?.config || !mountId) {
+    return false;
+  }
+  destroyOnlyofficeEditor();
+  try {
+    await loadOnlyofficeScript(bundle.documentServerUrl);
+  } catch (err) {
+    console.error('[preview] onlyoffice script', err);
+    return false;
+  }
+  await nextTick();
+  const el = document.getElementById(mountId);
+  if (!el || typeof window.DocsAPI === 'undefined' || !window.DocsAPI.DocEditor) {
+    return false;
+  }
+  try {
+    onlyofficeDocEditor = new window.DocsAPI.DocEditor(mountId, bundle.config);
+    return true;
+  } catch (err) {
+    console.error('[preview] onlyoffice editor', err);
+    return false;
+  }
+}
+
+async function openPreview(row) {
+  if (row.status !== 'success') {
+    ElMessage.warning(t('detail.previewNotReady'));
+    return;
+  }
+  preview.value.visible = true;
+  preview.value.loading = true;
+  preview.value.errorMessage = '';
+  preview.value.data = null;
+  destroyOnlyofficeEditor();
+  preview.value.useOnlyoffice = false;
+  preview.value.ooBundle = null;
+  preview.value.ooMountId = '';
+  if (preview.value.pdfObjectUrl) {
+    window.URL.revokeObjectURL(preview.value.pdfObjectUrl);
+  }
+  preview.value.pdfObjectUrl = '';
+  preview.value.officeArrayBuffer = null;
+  preview.value.selectedChunkId = null;
+  preview.value.chunkOverlay = true;
+  chunkCardRefs.clear();
+  try {
+    const response = await api.kb.getFilePreview(row.id);
+    const payload = response.data?.data ?? response.data ?? {};
+    preview.value.data = payload;
+    if (!payload.previewable) {
+      preview.value.errorMessage = t('detail.previewNotReady');
+      return;
+    }
+
+    const officePreviewModes = ['pdf', 'docx', 'xlsx'];
+    if (officePreviewModes.includes(payload.previewMode)) {
+      try {
+        const ooResp = await api.kb.getOnlyofficeConfig(row.id, { mode: 'view' });
+        const bundle = ooResp.data?.data;
+        if (bundle?.documentServerUrl && bundle?.config) {
+          preview.value.useOnlyoffice = true;
+          preview.value.ooBundle = bundle;
+          preview.value.ooMountId = `oo-preview-${row.id}-${Date.now()}`;
+        }
+      } catch {
+        /* OnlyOffice 未启用或类型不支持时沿用浏览器内预览 */
+      }
+    }
+
+    if (!preview.value.useOnlyoffice) {
+      await ensureLegacyOfficeBinary(row, payload);
+    }
+  } catch (error) {
+    const message = error?.response?.data?.message || error.message;
+    preview.value.errorMessage = message || t('detail.previewLoadFailed');
+  } finally {
+    preview.value.loading = false;
+  }
+
+  if (preview.value.errorMessage) return;
+
+  await nextTick();
+
+  if (preview.value.useOnlyoffice) {
+    const ok = await mountOnlyofficePreview();
+    if (!ok) {
+      preview.value.useOnlyoffice = false;
+      preview.value.ooBundle = null;
+      preview.value.ooMountId = '';
+      destroyOnlyofficeEditor();
+      try {
+        await ensureLegacyOfficeBinary(row, preview.value.data);
+        await nextTick();
+        await renderLegacyOfficeIfNeeded();
+      } catch (err) {
+        console.error('[preview] onlyoffice fallback failed', err);
+        ElMessage.error(t('detail.previewOfficeRenderFailed'));
+      }
+    }
+    return;
+  }
+
+  await renderLegacyOfficeIfNeeded();
+}
+
+function onPreviewDrawerClosed() {
+  destroyOnlyofficeEditor();
+  preview.value.useOnlyoffice = false;
+  preview.value.ooBundle = null;
+  preview.value.ooMountId = '';
+  if (preview.value.pdfObjectUrl) {
+    window.URL.revokeObjectURL(preview.value.pdfObjectUrl);
+  }
+  preview.value.pdfObjectUrl = '';
+  preview.value.officeArrayBuffer = null;
+  if (docxPreviewRef.value) docxPreviewRef.value.innerHTML = '';
+  if (xlsxPreviewRef.value) xlsxPreviewRef.value.innerHTML = '';
+  preview.value.data = null;
+  preview.value.errorMessage = '';
+  preview.value.selectedChunkId = null;
+  chunkCardRefs.clear();
+}
+
 function openAskDialog() {
   askDialog.value.visible = true;
 }
@@ -615,18 +1106,37 @@ watch(() => route.params.id, () => {
 </script>
 
 <style scoped>
-/* Figma design tokens: bg #f5f6f8, primary #032b71, text #101828, #6a7282, border #d1d5dc/#e5e7eb/#f3f4f6, success #007a55/#ecfdf5/#a4f4cf, error #cd011d/#fef2f2/#ffc9c9, index green #00bc7d */
+/* 知识库文档详情：顶栏 56px + 主区填满剩余高度，表格区在 main 内滚动 */
 .page-shell {
-  min-height: 100vh;
-  background: #f5f6f8;
+  height: 100vh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--kb-page-bg);
 }
 
 .page-content {
-  padding: 32px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 24px;
+}
+
+@media (min-width: 768px) {
+  .page-content {
+    padding: 32px;
+  }
 }
 
 .detail-head {
-  margin-bottom: 24px;
+  flex-shrink: 0;
+  margin-bottom: 20px;
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -661,49 +1171,84 @@ watch(() => route.params.id, () => {
 .title-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 0 12px;
+}
+
+.title-meta {
+  margin-left: 1rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--gray-200);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .title {
   margin: 0;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 600;
-  line-height: 32px;
-  letter-spacing: -0.6px;
-  color: #101828;
+  line-height: 1.3;
+  letter-spacing: -0.025em;
+  color: var(--gray-900);
 }
 
 .id-tag {
   font-size: 12px;
-  line-height: 16px;
-  font-family: Consolas, monospace;
-  color: #364153;
-  border: 0.8px solid #d1d5dc;
-  border-radius: 6px;
-  background: #e5e7eb;
+  line-height: 1.25;
+  font-family: ui-monospace, Consolas, monospace;
+  color: var(--gray-600);
+  border: 1px solid var(--gray-200);
+  border-radius: 2px;
+  background: var(--gray-100);
   padding: 2px 8px;
+}
+
+.meta-sep {
+  color: var(--gray-300);
+  font-weight: 300;
+  user-select: none;
+  padding: 0 2px;
+}
+
+.doc-count-badge {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--gray-600);
+}
+
+.cell-mono {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--gray-700);
 }
 
 .desc {
   margin: 6px 0 0;
   font-size: 14px;
   line-height: 20px;
-  color: #6a7282;
+  color: var(--gray-700);
 }
 
 .table-card {
   width: 100%;
-  border: 0.8px solid #d1d5dc;
-  border-radius: 6px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
   overflow: hidden;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  background: var(--black-white-white);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .table-header {
+  flex-shrink: 0;
   min-height: 66px;
-  border-bottom: 0.8px solid #e5e7eb;
-  background: rgba(249, 250, 251, 0.8);
+  border-bottom: 1px solid var(--gray-200);
+  background: var(--black-white-white);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -765,9 +1310,10 @@ watch(() => route.params.id, () => {
 }
 
 .upload-progress-wrap {
+  flex-shrink: 0;
   padding: 10px 24px 14px;
-  border-bottom: 0.8px solid #f3f4f6;
-  background: #fafcff;
+  border-bottom: 1px solid var(--gray-200);
+  background: var(--slate-50);
 }
 
 .upload-progress-item + .upload-progress-item {
@@ -943,24 +1489,60 @@ watch(() => route.params.id, () => {
   width: 100% !important;
 }
 
-.doc-table :deep(.el-table__cell) {
-  font-size: 12px;
-  color: #6a7282;
+.table-scroll-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
-.doc-table :deep(.el-table__fixed-right) {
-  right: 0;
+.doc-table :deep(.el-table__header th) {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: left;
+  background: var(--black-white-white) !important;
+}
+
+.doc-table :deep(.el-table__header-wrapper) {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.doc-table :deep(.el-table__cell) {
+  font-size: 12px;
+  color: var(--gray-700);
+  text-align: left;
 }
 
 .status-tag {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   border-radius: 6px;
   padding: 4px 8px;
   font-size: 11px;
   font-weight: 500;
   line-height: 1.4;
+}
+
+.status-tag__icon {
+  flex-shrink: 0;
+}
+
+.status-tag__icon.is-spin {
+  animation: kb-spin 1s linear infinite;
+}
+
+@keyframes kb-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .status-tag.success {
@@ -1007,35 +1589,53 @@ watch(() => route.params.id, () => {
 }
 
 .index-item.success .index-dot {
-  background: #00bc7d;
+  background: #10b981;
 }
 
 .index-item.failed .index-dot {
-  background: #cd011d;
+  background: var(--kb-danger);
 }
 
 .index-item.processing .index-dot {
   background: #9a6700;
 }
 
+.index-item.waiting .index-dot {
+  background: var(--gray-300);
+}
+
 .index-label {
-  font-family: Consolas, monospace;
+  font-family: ui-monospace, Consolas, monospace;
   font-size: 11px;
-  color: #6a7282;
+  color: var(--gray-500);
 }
 
 .action-buttons {
-  display: flex;
-  flex-wrap: nowrap;
-  justify-content: flex-end;
+  display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 0;
+  opacity: 0;
+  transition: opacity 0.18s ease;
 }
 
-.action-buttons .el-button {
-  flex-shrink: 0;
-  padding-left: 8px;
-  padding-right: 8px;
+.doc-table :deep(.el-table__body tr:hover) .action-buttons,
+.doc-table :deep(.el-table__body tr:focus-within) .action-buttons {
+  opacity: 1;
+}
+
+.action-icon-btn {
+  padding: 6px !important;
+  min-width: 28px !important;
+  margin: 0 !important;
+}
+
+.action-icon-btn:hover {
+  background: var(--gray-100) !important;
+}
+
+.action-icon-btn.el-button--danger:hover {
+  background: rgba(var(--kb-danger-rgb), 0.08) !important;
 }
 
 .hidden-file-input {
@@ -1043,15 +1643,479 @@ watch(() => route.params.id, () => {
 }
 
 .pager-wrap {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 12px 24px 20px;
-  border-top: 0.8px solid #f3f4f6;
+  border-top: 1px solid var(--gray-200);
 }
 
 .pager-total {
   font-size: 12px;
+  color: var(--gray-500);
+}
+
+.preview-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding-right: 8px;
+}
+
+.preview-drawer-header__icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: rgba(var(--kb-primary-rgb), 0.08);
+  border: 1px solid rgba(var(--kb-primary-rgb), 0.15);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--kb-primary);
+}
+
+.preview-drawer-header__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.preview-drawer-header__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--gray-900);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.preview-drawer-header__sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--gray-500);
+  line-height: 1.4;
+}
+
+.preview-drawer-header__close {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  padding: 8px;
+  margin: -4px -4px 0 0;
+  border-radius: var(--radius-sm);
+  color: var(--slate-400);
+  cursor: pointer;
+  line-height: 0;
+}
+
+.preview-drawer-header__close:hover {
+  background: rgba(226, 232, 240, 0.6);
+  color: var(--slate-700);
+}
+
+.preview-panel-title--split {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.preview-chunk-total {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--gray-500);
+}
+
+.preview-panel-title--toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.preview-panel-title__mode {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--gray-500);
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--black-white-white);
+  border: 1px solid var(--slate-200);
+}
+
+.preview-loading,
+.preview-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 24px;
   color: #6a7282;
+  font-size: 14px;
+}
+
+.preview-error {
+  color: #cd011d;
+}
+
+.preview-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.preview-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 12px 24px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--slate-200);
+  background: var(--black-white-white);
+}
+
+.preview-overlay-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #364153;
+  cursor: pointer;
+  user-select: none;
+}
+
+.preview-trunc-hint,
+.preview-pdf-hint {
+  font-size: 12px;
+  color: #9a6700;
+}
+
+.preview-panels {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  max-height: calc(100vh - 120px);
+  gap: 0;
+}
+
+.preview-panel {
+  flex: 1;
+  width: 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: none;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.preview-panel--left {
+  background: var(--slate-100);
+  border-right: 1px solid var(--slate-200);
+}
+
+.preview-panel--right {
+  background: var(--black-white-white);
+}
+
+.preview-panel-title {
+  flex-shrink: 0;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-700);
+  background: var(--slate-100);
+  border-bottom: 1px solid var(--slate-200);
+}
+
+.preview-panel--right .preview-panel-title {
+  background: var(--black-white-white);
+}
+
+.preview-panel-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  padding: 24px;
+  overflow: auto;
+  background: var(--slate-100);
+}
+
+.preview-panel--right .preview-panel-body {
+  padding: 0;
+  overflow: hidden;
+  background: var(--black-white-white);
+}
+
+.preview-iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 480px;
+  border: 0;
+}
+
+/* PDF 物理页比例容器（约 A4 1:1.414） */
+.preview-page-stack {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  align-items: stretch;
+}
+
+.preview-page-canvas {
+  position: relative;
+  width: 100%;
+  max-height: min(82vh, 1100px);
+  aspect-ratio: 1 / 1.414;
+  margin: 0 auto;
+  flex-shrink: 0;
+  background: var(--black-white-white);
+  border: 1px solid var(--slate-200);
+  border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+}
+
+.preview-iframe--canvas,
+.preview-onlyoffice--canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+}
+
+.preview-onlyoffice {
+  width: 100%;
+  height: 100%;
+  min-height: 480px;
+}
+
+/* Office 预览：外层灰底画布（接近 PDF 内嵌区域的观感），勿覆盖 docx-preview 自带的白页与阴影 */
+.preview-office {
+  height: 100%;
+  min-height: 480px;
+  max-height: calc(100vh - 200px);
+  overflow: auto;
+  background: #e8eaed;
+}
+
+.preview-office--docx {
+  padding: 0;
+}
+
+.preview-office--docx :deep(.docx-wrapper) {
+  min-width: min-content;
+}
+
+.preview-office--docx :deep(section.docx) {
+  min-height: 200px;
+}
+
+.preview-office--xlsx {
+  padding: 12px 16px 20px;
+}
+
+.xlsx-preview-inner {
+  min-width: min-content;
+  max-width: 100%;
+}
+
+.xlsx-preview-sheet-panel {
+  margin-bottom: 20px;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
+  border: 1px solid #c8ccd0;
+  overflow: hidden;
+}
+
+.xlsx-preview-sheet-panel:last-child {
+  margin-bottom: 0;
+}
+
+.xlsx-preview-sheet-title {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e2939;
+  background: linear-gradient(to bottom, #f8fafc, #eef2f6);
+  border-bottom: 1px solid #c8ccd0;
+}
+
+.xlsx-preview-table-wrap {
+  overflow: auto;
+  max-height: min(60vh, 560px);
+}
+
+.xlsx-preview-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-family: Calibri, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  color: #101828;
+  background: #fff;
+}
+
+.xlsx-preview-table td {
+  border: 1px solid #d0d7de;
+  padding: 4px 10px;
+  min-width: 5em;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.xlsx-preview-table tr:first-child td {
+  font-weight: 600;
+  background: #f0f3f7;
+  border-bottom: 1px solid #b8c0cc;
+}
+
+.xlsx-preview-empty {
+  margin: 0;
+  padding: 12px;
+  font-size: 13px;
+  color: #6a7282;
+}
+
+.preview-text-scroll {
+  height: 100%;
+  min-height: 480px;
+  max-height: calc(100vh - 200px);
+  overflow: auto;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #101828;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.preview-pre {
+  margin: 0;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.preview-seg {
+  cursor: default;
+}
+
+.preview-seg--hl {
+  background: rgba(0, 188, 125, 0.2);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.preview-seg--sel {
+  outline: 2px solid var(--kb-danger);
+  background: rgba(var(--kb-danger-rgb), 0.12);
+  border-radius: 2px;
+}
+
+.preview-chunk-list {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  padding: 16px;
+}
+
+.preview-chunk-list :deep(.el-scrollbar__wrap) {
+  overflow-x: hidden;
+}
+
+.preview-chunk-card {
+  border: 1px solid var(--slate-200);
+  border-radius: 2px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: var(--black-white-white);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+.preview-chunk-card:last-child {
+  margin-bottom: 0;
+}
+
+.preview-chunk-card:hover {
+  border-color: var(--slate-300);
+  background: var(--slate-50);
+}
+
+.preview-chunk-card--active {
+  border-color: var(--kb-danger);
+  background: rgba(var(--kb-danger-rgb), 0.06);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.preview-chunk-card--active .preview-chunk-no {
+  background: var(--kb-danger);
+  color: var(--black-white-white);
+  padding: 2px 6px;
+  border-radius: 2px;
+  font-size: 11px;
+}
+
+.preview-chunk-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.preview-chunk-meta__main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.preview-chunk-chars {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--gray-500);
+}
+
+.preview-chunk-no {
+  font-weight: 600;
+  color: var(--kb-primary);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+}
+
+.preview-chunk-path {
+  color: #475467;
+}
+
+.preview-chunk-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #344054;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.preview-chunk-assets {
+  margin-top: 8px;
 }
 </style>

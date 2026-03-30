@@ -10,7 +10,10 @@
     "start:cluster": "node src/cluster/smartCluster.js",
     "cluster:dev": "nodemon src/cluster/smartCluster.js",
     "worker": "node src/workers/queueProcessor.js",
-    "worker:dev": "nodemon src/workers/queueProcessor.js"
+    "worker:dev": "nodemon src/workers/queueProcessor.js",
+    "eval:retrieval": "node scripts/retrieval-eval.js",
+    "eval:retrieval:rank": "node scripts/run-retrieval-testset.js",
+    "eval:retrieval:pipeline": "node scripts/retrieval-eval-pipeline.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.914.0",

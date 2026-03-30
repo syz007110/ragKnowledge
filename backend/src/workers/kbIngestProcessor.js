@@ -487,7 +487,8 @@ async function extractRawText(payload) {
       );
       const html = String(htmlResult.value || '');
       const blocks = [];
-      const blockRegex = /<(h[1-6]|p|table)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+      // Mammoth emits Word lists as <ul><li>…</li></ul>; <li> must be included or list body is dropped.
+      const blockRegex = /<(h[1-6]|p|li|table)\b[^>]*>([\s\S]*?)<\/\1>/gi;
       let match;
       while ((match = blockRegex.exec(html))) {
         const tag = String(match[1] || '').toLowerCase();
@@ -706,5 +707,6 @@ async function processKbIngestJob(job) {
 }
 
 module.exports = {
-  processKbIngestJob
+  processKbIngestJob,
+  extractRawText
 };

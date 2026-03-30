@@ -34,5 +34,7 @@
   "kb.recycle.collectionNotRestored": "所选文档所属知识集未恢复，无法恢复文档",
   "kb.recycle.purgeQueued": "彻底删除任务已提交",
   "kb.recycle.purgeFailed": "回收站彻底删除失败",
-  "kb.recycle.invalidPurgePayload": "回收站删除任务参数无效"
+  "kb.recycle.invalidPurgePayload": "回收站删除任务参数无效",
+  "kb.onlyofficeDisabled": "OnlyOffice 未配置或未启用（请检查 ONLYOFFICE_* 环境变量）",
+  "kb.onlyofficeUnsupportedType": "当前文件类型不支持使用 OnlyOffice 打开"
 }

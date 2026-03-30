@@ -13,8 +13,8 @@ body,
 
 body {
   font-family: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  color: #101828;
-  background: #f5f6f8;
+  color: var(--gray-900);
+  background: var(--kb-page-bg);
 }
 
 a {

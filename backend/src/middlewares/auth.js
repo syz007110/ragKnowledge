@@ -56,5 +56,6 @@ function requireKbPermission(permission) {
 
 module.exports = {
   authMiddleware,
-  requireKbPermission
+  requireKbPermission,
+  hasKbPermission
 };

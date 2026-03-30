@@ -34,5 +34,7 @@
   "kb.recycle.collectionNotRestored": "Cannot restore file while its collection is not restored",
   "kb.recycle.purgeQueued": "Purge jobs have been queued",
   "kb.recycle.purgeFailed": "Recycle purge failed",
-  "kb.recycle.invalidPurgePayload": "Invalid recycle purge payload"
+  "kb.recycle.invalidPurgePayload": "Invalid recycle purge payload",
+  "kb.onlyofficeDisabled": "OnlyOffice is not configured (check ONLYOFFICE_* environment variables)",
+  "kb.onlyofficeUnsupportedType": "This file type is not supported for OnlyOffice"
 }

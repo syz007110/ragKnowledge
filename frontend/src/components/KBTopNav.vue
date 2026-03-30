@@ -1,31 +1,15 @@
 <template>
   <header class="kb-header">
     <div class="header-left">
-      <router-link to="/workspace" class="brand" @click.stop="">
-        <span class="brand-mark">▲</span>
-        <span class="brand-title">{{ t('nav.brand') }}</span>
+      <router-link to="/workspace" class="brand group" @click.stop="">
+        <img src="/Icons/logo.svg" alt="LogTool" class="brand-icon-img" width="32" height="32" />
+        <span class="brand-slash" aria-hidden="true">/</span>
+        <span class="brand-product">{{ t('nav.brand') }}</span>
       </router-link>
-      <nav v-if="!breadcrumbOnly" class="menu">
-        <button
-          class="menu-item"
-          :class="{ active: activeTab === 'workspace' }"
-          @click="$router.push('/workspace')"
-        >
-          {{ t('nav.workspace') }}
-        </button>
-        <button
-          class="menu-item"
-          :class="{ active: activeTab === 'recycle' }"
-          @click="$router.push('/recycle-bin')"
-        >
-          {{ t('nav.recycleBin') }}
-        </button>
-      </nav>
-      <slot v-else name="breadcrumb" />
+      <slot v-if="breadcrumbOnly" name="breadcrumb" />
     </div>
 
     <div class="header-right">
-      <!-- 语言切换（与登录页一致） -->
       <el-dropdown trigger="click" @command="handleLanguageChange">
         <el-button text class="lang-btn">
           <Earth theme="outline" size="20" fill="#333" class="lang-icon" />
@@ -51,7 +35,6 @@
         </template>
       </el-dropdown>
       <div class="divider" />
-      <!-- 用户头像下拉：仅管理员显示“设置”，所有人显示退出登录 -->
       <el-dropdown trigger="click" @command="handleUserCommand">
         <button class="user-btn">
           <span class="avatar">{{ userInitials }}</span>
@@ -91,12 +74,8 @@ import { getLocale, setLocale } from '../i18n';
 import { Earth } from '@icon-park/vue-next';
 import { Check, Setting, SwitchButton } from '@element-plus/icons-vue';
 
-const props = defineProps({
-  activeTab: {
-    type: String,
-    default: 'workspace'
-  },
-  /** 为 true 时不显示 tab，仅显示面包屑 slot（用于设置页） */
+defineProps({
+  /** 为 true 时在品牌右侧显示面包屑 slot（文档详情、设置页） */
   breadcrumbOnly: {
     type: Boolean,
     default: false
@@ -133,8 +112,12 @@ function handleLanguageChange(locale) {
 
 <style scoped>
 .kb-header {
+  position: sticky;
+  top: 0;
   height: 56px;
-  border-bottom: 1px solid var(--gray-300);
+  flex-shrink: 0;
+  z-index: 50;
+  border-bottom: 1px solid var(--gray-200);
   background: var(--black-white-white);
   display: flex;
   align-items: center;
@@ -145,53 +128,67 @@ function handleLanguageChange(locale) {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 40px;
+  gap: 16px;
+  min-width: 0;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   text-decoration: none;
   color: inherit;
+  flex-shrink: 0;
 }
 
-.brand:hover {
-  opacity: 0.85;
+.brand.group {
+  transition: opacity 0.2s ease;
+}
+
+.brand.group:hover {
+  opacity: 0.92;
 }
 
 .brand:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;
+  border-radius: 4px;
 }
 
-.brand-mark {
-  color: #e11d48;
-  font-size: 12px;
+.brand-icon-img {
+  display: block;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
 }
 
-.brand-title {
-  color: #032b71;
-  font-size: 17px;
+.brand-slash {
+  color: var(--gray-300);
+  font-weight: 300;
+  font-size: 1.125rem;
+  margin: 0 2px;
+  line-height: 1;
+}
+
+.brand-product {
+  color: var(--gray-800);
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: -0.425px;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
 }
 
-.menu {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 56px;
-}
-
-/* 面包屑在 header 左侧（与 brand 同一行） */
+/* 面包屑在品牌右侧 */
 .header-left :deep(.breadcrumb) {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 0 24px;
+  margin: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--gray-200);
   font-size: 14px;
   color: var(--text-secondary);
+  min-width: 0;
 }
 
 .header-left :deep(.breadcrumb-link) {
@@ -204,34 +201,22 @@ function handleLanguageChange(locale) {
 }
 
 .header-left :deep(.breadcrumb-sep) {
-  color: var(--gray-400);
+  color: var(--gray-300);
+  font-weight: 300;
+  font-size: 1.125rem;
+  margin: 0 10px;
 }
 
 .header-left :deep(.breadcrumb-current) {
   color: var(--text-primary);
-}
-
-.menu-item {
-  height: 56px;
-  padding: 0 16px;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: #6a7282;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.menu-item.active {
-  color: #032b71;
-  border-bottom-color: #032b71;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .header-right {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .lang-btn {
@@ -299,7 +284,7 @@ function handleLanguageChange(locale) {
   align-items: center;
   justify-content: center;
   color: var(--black-white-white);
-  background: #032b71;
+  background: var(--kb-primary);
   font-size: 10px;
   font-weight: 600;
 }

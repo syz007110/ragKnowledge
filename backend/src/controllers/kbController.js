@@ -12,6 +12,8 @@ const {
   renameFile,
   rebuildFile,
   getFileDownloadInfo,
+  getFilePreviewData,
+  getFileAssetBuffer,
   submitIngestTask,
   getJobStatus,
   retrievalDebug,
@@ -22,6 +24,7 @@ const {
   approveTagAlias,
   rejectTagAlias
 } = require('../services/kbService');
+const { DEFAULT_RETRIEVAL_TOP_K } = require('../config/retrievalConstants');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -34,6 +37,11 @@ const {
   getObjectBufferByUri,
   deleteObjectByUri
 } = require('../services/objectStorageService');
+const { hasKbPermission } = require('../middlewares/auth');
+const {
+  getOnlyofficeEditorBundle,
+  isOnlyofficeEnabled
+} = require('../services/kbOnlyofficeService');
 
 function safeUnlink(fp) {
   try {
@@ -457,9 +465,9 @@ async function retrievalDebugItem(req, res, next) {
     const {
       collectionId,
       query = '',
-      esTopK = 5,
-      vecTopK = 5,
-      fuseTopK = 5
+      esTopK = DEFAULT_RETRIEVAL_TOP_K,
+      vecTopK = DEFAULT_RETRIEVAL_TOP_K,
+      fuseTopK = DEFAULT_RETRIEVAL_TOP_K
     } = req.body || {};
     if (!collectionId) {
       return res.status(400).json({ messageKey: 'kb.collectionIdRequired', message: req.t('kb.collectionIdRequired') });
@@ -470,9 +478,9 @@ async function retrievalDebugItem(req, res, next) {
     const result = await retrievalDebug({
       collectionId: Number(collectionId),
       query: String(query || ''),
-      esTopK: Number(esTopK) || 5,
-      vecTopK: Number(vecTopK) || 5,
-      fuseTopK: Number(fuseTopK) || 5
+      esTopK: Number(esTopK) || DEFAULT_RETRIEVAL_TOP_K,
+      vecTopK: Number(vecTopK) || DEFAULT_RETRIEVAL_TOP_K,
+      fuseTopK: Number(fuseTopK) || DEFAULT_RETRIEVAL_TOP_K
     });
     return res.json(result);
   } catch (error) {
@@ -721,6 +729,84 @@ function buildAsciiFileName(name = '') {
     .slice(0, 180) || 'download';
 }
 
+async function previewFileItem(req, res, next) {
+  try {
+    const result = await getFilePreviewData({ id: Number(req.params.id) });
+    if (result.error === 'not_found') {
+      return res.status(404).json({ messageKey: 'kb.fileNotFound', message: req.t('kb.fileNotFound') });
+    }
+    return res.json({
+      messageKey: 'common.success',
+      message: req.t('common.success'),
+      data: result
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function getOnlyofficeEditorConfigItem(req, res, next) {
+  try {
+    const mode = String(req.query.mode || 'view').toLowerCase() === 'edit' ? 'edit' : 'view';
+    if (mode === 'edit' && !hasKbPermission(req.user, 'kb:upload')) {
+      return res.status(403).json({ messageKey: 'auth.forbidden', message: req.t('auth.forbidden') });
+    }
+    if (!isOnlyofficeEnabled()) {
+      return res.status(503).json({
+        messageKey: 'kb.onlyofficeDisabled',
+        message: req.t('kb.onlyofficeDisabled')
+      });
+    }
+    const data = await getOnlyofficeEditorBundle({
+      fileId: Number(req.params.id),
+      user: req.user,
+      mode
+    });
+    return res.json({
+      messageKey: 'common.success',
+      message: req.t('common.success'),
+      data
+    });
+  } catch (error) {
+    if (error.message === 'kb.fileNotFound') {
+      return res.status(404).json({ messageKey: 'kb.fileNotFound', message: req.t('kb.fileNotFound') });
+    }
+    if (error.message === 'kb.onlyofficeUnsupportedType') {
+      return res.status(400).json({
+        messageKey: 'kb.onlyofficeUnsupportedType',
+        message: req.t('kb.onlyofficeUnsupportedType')
+      });
+    }
+    if (error.message === 'kb.onlyofficeJwtSecretMissing') {
+      return res.status(503).json({
+        messageKey: 'kb.onlyofficeDisabled',
+        message: req.t('kb.onlyofficeDisabled')
+      });
+    }
+    return next(error);
+  }
+}
+
+async function downloadFileAssetItem(req, res, next) {
+  try {
+    const result = await getFileAssetBuffer({
+      fileId: Number(req.params.id),
+      assetId: Number(req.params.assetId)
+    });
+    if (!result) {
+      return res.status(404).json({ messageKey: 'kb.fileNotFound', message: req.t('kb.fileNotFound') });
+    }
+    res.setHeader('Content-Type', result.mimeType || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    if (result.buffer?.length) {
+      res.setHeader('Content-Length', String(result.buffer.length));
+    }
+    return res.send(result.buffer);
+  } catch (error) {
+    return next(error);
+  }
+}
+
 async function downloadFileItem(req, res, next) {
   try {
     const result = await getFileDownloadInfo({
@@ -736,7 +822,13 @@ async function downloadFileItem(req, res, next) {
     if (Number(file.fileSize || 0) > 0) {
       res.setHeader('Content-Length', String(file.fileSize));
     }
-    res.setHeader('Content-Disposition', `attachment; filename="${asciiFileName}"; filename*=UTF-8''${encodedFileName}`);
+    const inline = String(req.query?.inline || req.query?.preview || '') === '1';
+    res.setHeader(
+      'Content-Disposition',
+      inline
+        ? `inline; filename="${asciiFileName}"; filename*=UTF-8''${encodedFileName}`
+        : `attachment; filename="${asciiFileName}"; filename*=UTF-8''${encodedFileName}`
+    );
     if (localPath) {
       if (!fs.existsSync(localPath)) {
         return res.status(404).json({ messageKey: 'kb.fileNotFound', message: req.t('kb.fileNotFound') });
@@ -774,6 +866,9 @@ module.exports = {
   deleteFileItem,
   rebuildFileItem,
   downloadFileItem,
+  downloadFileAssetItem,
+  previewFileItem,
+  getOnlyofficeEditorConfigItem,
   listStandardTagItems,
   listTagAliasItems,
   approveTagAliasItem,

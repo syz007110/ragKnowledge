@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { DEFAULT_RETRIEVAL_TOP_K } = require('../config/retrievalConstants');
 
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
@@ -10,7 +11,7 @@ function tokenizeText(value = '') {
   return terms.filter(Boolean);
 }
 
-function fuseAndRerankHits({ query, esHits = [], vecHits = [], topK = 5, rrfK = 60 }) {
+function fuseAndRerankHits({ query, esHits = [], vecHits = [], topK = DEFAULT_RETRIEVAL_TOP_K, rrfK = 60 }) {
   const map = new Map();
   const push = (hit, lane) => {
     const keyBase = hit.chunkId || `${hit.fileId}:${sha256(hit.content).slice(0, 12)}`;
@@ -70,7 +71,7 @@ function fuseAndRerankHits({ query, esHits = [], vecHits = [], topK = 5, rrfK = 
   });
 
   merged.sort((a, b) => b.rrfScore - a.rrfScore);
-  const fused = merged.slice(0, Math.max(1, Math.min(100, Number(topK) || 5)));
+  const fused = merged.slice(0, Math.max(1, Math.min(100, Number(topK) || DEFAULT_RETRIEVAL_TOP_K)));
   const reranked = [...fused].sort((a, b) => b.rerankScore - a.rerankScore);
   return {
     fused,
@@ -91,7 +92,7 @@ function createHybridRetrievalService({
   }
 
   return {
-    async retrievalDebug({ collectionId, query, esTopK = 5, vecTopK = 5, fuseTopK = 5 }) {
+    async retrievalDebug({ collectionId, query, esTopK = DEFAULT_RETRIEVAL_TOP_K, vecTopK = DEFAULT_RETRIEVAL_TOP_K, fuseTopK = DEFAULT_RETRIEVAL_TOP_K }) {
       const startedAt = Date.now();
       const safeQuery = String(query || '').trim();
       if (!safeQuery) {

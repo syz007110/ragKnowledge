@@ -1,6 +1,6 @@
 <template>
   <div class="page-shell">
-    <KBTopNav active-tab="workspace" />
+    <KBTopNav />
 
     <main class="page-content">
       <div class="heading-row">
@@ -13,10 +13,16 @@
           </h1>
           <p class="desc">{{ t('workspace.desc') }}</p>
         </div>
-        <el-button class="create-btn" type="primary" @click="openCreateDialog">
-          <el-icon><Plus /></el-icon>
-          {{ t('workspace.create') }}
-        </el-button>
+        <div class="heading-actions">
+          <el-button class="recycle-btn" @click="router.push('/recycle-bin')">
+            <el-icon><Delete /></el-icon>
+            {{ t('workspace.openRecycle') }}
+          </el-button>
+          <el-button class="create-btn" type="primary" @click="openCreateDialog">
+            <el-icon><Plus /></el-icon>
+            {{ t('workspace.create') }}
+          </el-button>
+        </div>
       </div>
 
       <div class="search-wrap">
@@ -36,7 +42,7 @@
         <article
           v-for="item in filteredItems"
           :key="item.id"
-          class="kb-card"
+          class="kb-card group"
           @click="goDetail(item.id)"
         >
           <div class="card-head">
@@ -61,9 +67,9 @@
             <span class="doc-count">{{ t('workspace.docsCount', { count: item.docCount || 0 }) }}</span>
             <span class="updated-at">{{ t('workspace.updatedAt', { date: item.updatedAt }) }}</span>
           </div>
-          <div class="card-actions">
-            <el-button text size="small" @click.stop="openEditDialog(item)">{{ t('workspace.rename') }}</el-button>
-            <el-button text size="small" type="danger" @click.stop="removeCollection(item)">{{ t('workspace.delete') }}</el-button>
+          <div class="card-actions" @click.stop>
+            <el-button text size="small" class="card-action-btn" @click.stop="openEditDialog(item)">{{ t('workspace.rename') }}</el-button>
+            <el-button text size="small" type="danger" class="card-action-btn" @click.stop="removeCollection(item)">{{ t('workspace.delete') }}</el-button>
           </div>
         </article>
       </section>
@@ -114,7 +120,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Document, Plus, Search, TrendCharts } from '@element-plus/icons-vue';
+import { Delete, Document, Plus, Search, TrendCharts } from '@element-plus/icons-vue';
 import { useI18n } from 'vue-i18n';
 import KBTopNav from '../components/KBTopNav.vue';
 import api from '../api';
@@ -259,31 +265,44 @@ onMounted(() => {
 <style scoped>
 .page-shell {
   min-height: 100vh;
-  background: #f5f6f8;
+  display: flex;
+  flex-direction: column;
+  background: var(--kb-page-bg);
 }
 
 .page-content {
-  padding: 32px;
+  width: 100%;
+  max-width: 1400px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 24px;
+}
+
+@media (min-width: 768px) {
+  .page-content {
+    padding: 32px;
+  }
 }
 
 .heading-row {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
-/* Figma design tokens: bg #f5f6f8, primary #032b71, text #101828, secondary #6a7282, border #d1d5dc/#e5e7eb/#f3f4f6 */
 .heading-text {
   flex: 1;
 }
 
 .title {
   margin: 0;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 600;
-  line-height: 28px;
-  color: #101828;
+  line-height: 1.3;
+  letter-spacing: -0.025em;
+  color: var(--gray-900);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -291,49 +310,71 @@ onMounted(() => {
 
 .title-icon {
   display: inline-flex;
-  color: #101828;
+  color: var(--kb-primary);
 }
 
 .desc {
   margin: 6px 0 0;
   font-size: 14px;
   line-height: 20px;
-  color: #6a7282;
+  color: var(--gray-500);
 }
 
 .create-btn {
-  --el-button-bg-color: #032b71;
-  --el-button-border-color: #032b71;
-  --el-button-hover-bg-color: #032b71;
-  --el-button-hover-border-color: #032b71;
-  background: #032b71;
-  border-color: #032b71;
-  border-radius: 6px;
+  --el-button-bg-color: var(--kb-primary);
+  --el-button-border-color: var(--kb-primary);
+  --el-button-hover-bg-color: var(--kb-primary);
+  --el-button-hover-border-color: var(--kb-primary);
+  background: var(--kb-primary);
+  border-color: var(--kb-primary);
+  border-radius: var(--radius-sm);
   height: 36px;
   padding: 0 16px;
   font-size: 14px;
   font-weight: 500;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .create-btn .el-icon {
   margin-right: 6px;
 }
 
+.heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.recycle-btn {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--gray-300);
+  background: var(--black-white-white);
+  color: var(--gray-700);
+  height: 36px;
+}
+
+.recycle-btn:hover {
+  background: var(--gray-50);
+  border-color: var(--gray-300);
+  color: var(--gray-900);
+}
+
 .search-wrap {
-  width: 400px;
+  width: 100%;
+  max-width: none;
   margin-bottom: 28px;
 }
 
 .search-wrap :deep(.el-input__wrapper) {
-  border-radius: 6px;
-  border: 0.8px solid #d1d5dc;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--gray-300);
+  box-shadow: none;
   padding-left: 36px;
 }
 
 .search-prefix-icon {
-  color: #6a7282;
+  color: var(--gray-400);
 }
 
 .card-grid {
@@ -343,18 +384,20 @@ onMounted(() => {
 }
 
 .kb-card {
-  background: #fff;
-  border: 0.8px solid #d1d5dc;
-  border-radius: 6px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--black-white-white);
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
   padding: 16px;
   cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .kb-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  border-color: rgba(var(--kb-primary-rgb), 0.4);
 }
 
 .card-head {
@@ -368,16 +411,26 @@ onMounted(() => {
   width: 38px;
   height: 38px;
   flex-shrink: 0;
-  border-radius: 6px;
-  background: rgba(3, 43, 113, 0.05);
-  border: 0.8px solid rgba(3, 43, 113, 0.1);
+  border-radius: 2px;
+  background: rgba(var(--kb-primary-rgb), 0.05);
+  border: 1px solid rgba(var(--kb-primary-rgb), 0.1);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.group:hover .card-icon-wrap {
+  background: var(--kb-primary);
+  border-color: var(--kb-primary);
+}
+
+.group:hover .card-icon-inner {
+  color: var(--black-white-white) !important;
 }
 
 .card-icon-inner {
-  color: #032b71;
+  color: var(--kb-primary);
 }
 
 .card-body {
@@ -389,16 +442,23 @@ onMounted(() => {
   margin: 0 0 6px;
   font-size: 15px;
   font-weight: 600;
-  line-height: 18.75px;
-  color: #101828;
+  line-height: 1.25;
+  color: var(--gray-900);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .card-desc {
   margin: 0;
-  color: #6a7282;
+  color: var(--gray-500);
   font-size: 12px;
-  line-height: 19.5px;
+  line-height: 1.625;
   min-height: 36px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .tag-row {
@@ -420,6 +480,12 @@ onMounted(() => {
   background: #f3f4f6;
   border: 0.8px solid #e5e7eb;
   border-radius: 6px;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.group:hover .card-tag {
+  background: var(--gray-100);
+  border-color: var(--gray-200);
 }
 
 .card-footer {
@@ -449,11 +515,27 @@ onMounted(() => {
   margin-top: 8px;
   display: flex;
   gap: 4px;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.group:hover .card-actions {
+  opacity: 1;
+}
+
+.card-action-btn {
+  padding: 4px !important;
+  border-radius: 2px !important;
+}
+
+.card-action-btn:hover {
+  background: var(--gray-100) !important;
 }
 
 .tag-tip {
   margin-top: 6px;
   font-size: 12px;
-  color: #6a7282;
+  color: var(--gray-500);
 }
 </style>

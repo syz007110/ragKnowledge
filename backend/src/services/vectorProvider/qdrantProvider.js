@@ -12,6 +12,7 @@ const {
   buildEmbeddingConfig,
   createEmbeddingService
 } = require('../embeddingService');
+const { DEFAULT_RETRIEVAL_TOP_K } = require('../../config/retrievalConstants');
 
 function normalizeQdrantHit(item, index) {
   const payload = item?.payload || {};
@@ -49,7 +50,7 @@ function createQdrantVectorProvider({ embeddingService = createEmbeddingService(
       await ensureQdrantCollection();
       return upsertQdrantPoints(points);
     },
-    async search({ collectionId, query, topK = 5, fileId = null, tags = [], pageNo = null, sourceType = '', blockType = '' }) {
+    async search({ collectionId, query, topK = DEFAULT_RETRIEVAL_TOP_K, fileId = null, tags = [], pageNo = null, sourceType = '', blockType = '' }) {
       const qdrantConfig = buildQdrantConfig();
       const embeddingConfig = buildEmbeddingConfig();
       if (!qdrantConfig.enabled || !embeddingConfig.enabled) {

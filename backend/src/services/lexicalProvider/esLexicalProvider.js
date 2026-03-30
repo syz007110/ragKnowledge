@@ -1,3 +1,5 @@
+const { DEFAULT_RETRIEVAL_TOP_K } = require('../../config/retrievalConstants');
+
 function createEsLexicalProvider({
   axiosInstance,
   buildEsConfig,
@@ -7,7 +9,7 @@ function createEsLexicalProvider({
     throw new Error('es_provider_missing_axios');
   }
   return {
-    async search({ collectionId, query, topK = 5 }) {
+    async search({ collectionId, query, topK = DEFAULT_RETRIEVAL_TOP_K }) {
       const config = buildEsConfig();
       if (!config.enabled) {
         return { skipped: true, hits: [] };
@@ -16,7 +18,7 @@ function createEsLexicalProvider({
       const auth = config.username ? { username: config.username, password: config.password } : undefined;
       const url = `${config.baseUrl}/${encodeURIComponent(config.indexName)}/_search`;
       const body = {
-        size: Math.max(1, Math.min(100, Number(topK) || 5)),
+        size: Math.max(1, Math.min(100, Number(topK) || DEFAULT_RETRIEVAL_TOP_K)),
         query: {
           bool: {
             must: [

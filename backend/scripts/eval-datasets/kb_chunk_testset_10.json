@@ -1,0 +1,85 @@
+[
+  {
+    "id": "q-00001",
+    "query": "EAP软件的主要作用是什么？",
+    "gold": [
+      { "chunk_id": "6949", "relevance": 3 }
+    ],
+    "meta": { "locale": "zh-CN" }
+  },
+  {
+    "id": "q-00002",
+    "query": "模拟器7天试用License激活后，需要在TwinCAT里执行什么操作才能继续使用？",
+    "gold": [
+      { "chunk_id": "6962", "relevance": 3 }
+    ],
+    "meta": { "locale": "zh-CN" }
+  },
+  {
+    "id": "q-00003",
+    "query": "模拟器日志拷贝前，MentorLearn应如何退出到桌面？",
+    "gold": [
+      { "chunk_id": "7068", "relevance": 3 },
+      { "chunk_id": "6954", "relevance": 2 }
+    ],
+    "meta": { "locale": "zh-CN" }
+  },
+  {
+    "id": "q-00004",
+    "query": "屏幕设置完成后，进入任务时左右眼和外接屏应呈现什么状态才算正常？",
+    "gold": [
+      { "chunk_id": "6975", "relevance": 3 }
+    ],
+    "meta": { "locale": "zh-CN" }
+  },
+  {
+    "id": "q-00005",
+    "query": "Dongle激活流程中，正式授权响应文件导入后会自动复制到哪个目录？",
+    "gold": [
+      { "chunk_id": "6973", "relevance": 3 }
+    ],
+    "meta": { "locale": "zh-CN" }
+  },
+  {
+    "id": "q-00006",
+    "query": "SP850仿真平台的电源输入规格（电压频率）是什么？",
+    "gold": [
+      { "chunk_id": "7561", "relevance": 3 },
+      { "chunk_id": "7560", "relevance": 1 }
+    ],
+    "meta": { "locale": "zh-CN" }
+  },
+  {
+    "id": "q-00007",
+    "query": "Emulator API里离合脚踏（Clutch）对应的变量名是什么？",
+    "gold": [
+      { "chunk_id": "7026", "relevance": 3 }
+    ],
+    "meta": { "locale": "zh-CN" }
+  },
+  {
+    "id": "q-00008",
+    "query": "兼容性表中EAP软件当前受控版本是多少？",
+    "gold": [
+      { "chunk_id": "6980", "relevance": 3 },
+      { "chunk_id": "6988", "relevance": 2 }
+    ],
+    "meta": { "locale": "zh-CN" }
+  },
+  {
+    "id": "q-00009",
+    "query": "FRS模块练习通常包括哪些典型任务？",
+    "gold": [
+      { "chunk_id": "7055", "relevance": 3 }
+    ],
+    "meta": { "locale": "zh-CN" }
+  },
+  {
+    "id": "q-00010",
+    "query": "机器人根治性前列腺切除术模块中，受训者需要分步完成哪些关键手术任务？",
+    "gold": [
+      { "chunk_id": "7057", "relevance": 3 }
+    ],
+    "meta": { "locale": "zh-CN" }
+  }
+]

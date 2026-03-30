@@ -1,15 +1,25 @@
 <template>
   <div class="page-shell">
-    <KBTopNav active-tab="recycle" />
+    <KBTopNav />
     <main class="page-content">
       <section class="head">
-        <h1 class="title">{{ t('recycle.title') }}</h1>
-        <p class="desc">{{ t('recycle.desc') }}</p>
+        <router-link to="/workspace" class="back-btn" aria-label="Back">
+          <el-icon :size="20"><ArrowLeft /></el-icon>
+        </router-link>
+        <el-icon class="head-trash" :size="28"><Delete /></el-icon>
+        <div class="head-text">
+          <h1 class="title">{{ t('recycle.pageTitle') }}</h1>
+          <p class="desc">{{ t('recycle.desc') }}</p>
+        </div>
       </section>
 
       <section v-if="selectedCollectionIds.length || selectedFileIds.length" class="selection-bar">
         <span class="selection-text">
-          {{ t('recycle.selectedHint', { collections: selectedCollectionIds.length, files: selectedFileIds.length }) }}
+          {{ t('recycle.selectedPrefix') }}
+          <strong class="selection-num">{{ selectedCollectionIds.length }}</strong>
+          {{ t('recycle.selectedMid') }}
+          <strong class="selection-num">{{ selectedFileIds.length }}</strong>
+          {{ t('recycle.selectedEnd') }}
         </span>
         <div class="selection-actions">
           <el-button type="danger" plain @click="batchPurge">
@@ -24,7 +34,7 @@
       </section>
 
       <section class="table-panel">
-        <el-table v-if="rows.length" :data="rows" row-key="id" style="width: 100%">
+        <el-table v-if="rows.length" :data="pagedRows" row-key="id" style="width: 100%">
           <el-table-column width="70">
             <template #default="{ row }">
               <el-checkbox :model-value="isCollectionSelected(row.id)" @change="toggleCollection(row, $event)" />
@@ -33,7 +43,7 @@
           <el-table-column :label="t('recycle.table.name')" min-width="420">
             <template #default="{ row }">
               <div class="collection-cell">
-                <button class="expand-btn" @click="toggleExpand(row.id)">
+                <button class="expand-btn" type="button" @click.stop="toggleExpand(row.id)">
                   <el-icon><ArrowRight v-if="!isExpanded(row.id)" /><ArrowDown v-else /></el-icon>
                 </button>
                 <el-icon class="collection-icon"><Folder /></el-icon>
@@ -47,10 +57,10 @@
                   <el-icon class="file-icon"><Document /></el-icon>
                   <span class="file-name">{{ file.fileName }}</span>
                   <span class="file-actions">
-                    <el-button text size="small" disabled @click="restoreSingleFile(file)">
+                    <el-button text size="small" disabled @click.stop="restoreSingleFile(file)">
                       {{ t('recycle.restore') }}
                     </el-button>
-                    <el-button text size="small" type="danger" @click="purgeSingleFile(file)">
+                    <el-button text size="small" type="danger" @click.stop="purgeSingleFile(file)">
                       {{ t('recycle.purge') }}
                     </el-button>
                   </span>
@@ -70,25 +80,36 @@
           </el-table-column>
           <el-table-column :label="t('recycle.table.actions')" width="220" align="right">
             <template #default="{ row }">
-              <el-button text size="small" :disabled="!row.canRestore" @click="restoreSingleCollection(row)">
+              <el-button text size="small" :disabled="!row.canRestore" @click.stop="restoreSingleCollection(row)">
                 {{ t('recycle.restore') }}
               </el-button>
-              <el-button text size="small" type="danger" @click="purgeSingleCollection(row)">
+              <el-button text size="small" type="danger" @click.stop="purgeSingleCollection(row)">
                 {{ t('recycle.purge') }}
               </el-button>
             </template>
           </el-table-column>
         </el-table>
         <el-empty v-else :description="t('recycle.empty')" />
+        <footer v-if="rows.length" class="table-footer-bar">
+          <span class="footer-summary">{{ t('recycle.footerSummary', { collections: totalCollections, files: totalFiles }) }}</span>
+          <el-pagination
+            v-model:current-page="recyclePage"
+            v-model:page-size="recyclePageSize"
+            layout="sizes, prev, pager, next"
+            :total="rows.length"
+            :page-sizes="[10, 20, 50]"
+            background
+          />
+        </footer>
       </section>
     </main>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { ArrowDown, ArrowRight, Delete, Document, Folder, RefreshLeft } from '@element-plus/icons-vue';
+import { ArrowDown, ArrowLeft, ArrowRight, Delete, Document, Folder, RefreshLeft } from '@element-plus/icons-vue';
 import { useI18n } from 'vue-i18n';
 import KBTopNav from '../components/KBTopNav.vue';
 import api from '../api';
@@ -98,6 +119,19 @@ const rows = ref([]);
 const expandedSet = ref(new Set());
 const selectedCollectionIds = ref([]);
 const selectedFileIds = ref([]);
+const recyclePage = ref(1);
+const recyclePageSize = ref(50);
+
+const pagedRows = computed(() => {
+  const start = (recyclePage.value - 1) * recyclePageSize.value;
+  return rows.value.slice(start, start + recyclePageSize.value);
+});
+
+const totalCollections = computed(() => rows.value.length);
+
+const totalFiles = computed(() =>
+  rows.value.reduce((sum, row) => sum + (row.files?.length || 0), 0)
+);
 
 const canBatchRestore = computed(() => {
   if (!selectedCollectionIds.value.length && selectedFileIds.value.length) {
@@ -114,7 +148,16 @@ function formatDateTime(value) {
 async function loadRecycleBin() {
   const response = await api.kb.getRecycleBin();
   rows.value = response.data?.items || [];
+  recyclePage.value = 1;
 }
+
+watch(
+  () => rows.value.length,
+  (len) => {
+    const maxPage = Math.max(1, Math.ceil(len / recyclePageSize.value) || 1);
+    if (recyclePage.value > maxPage) recyclePage.value = maxPage;
+  }
+);
 
 function isExpanded(collectionId) {
   return expandedSet.value.has(collectionId);
@@ -265,26 +308,76 @@ onMounted(() => {
 <style scoped>
 .page-shell {
   min-height: 100vh;
-  background: #f5f6f8;
+  display: flex;
+  flex-direction: column;
+  background: var(--kb-page-bg);
 }
 
 .page-content {
+  width: 100%;
+  max-width: 1400px;
+  margin-left: auto;
+  margin-right: auto;
   padding: 24px;
 }
 
+@media (min-width: 768px) {
+  .page-content {
+    padding: 32px;
+  }
+}
+
 .head {
-  margin-bottom: 16px;
+  flex-shrink: 0;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.back-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  background: var(--black-white-white);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gray-900);
+  text-decoration: none;
+  transition: background 0.2s, border-color 0.2s;
+  margin-top: 2px;
+}
+
+.back-btn:hover {
+  background: var(--gray-50);
+  border-color: var(--gray-300);
+}
+
+.head-trash {
+  flex-shrink: 0;
+  color: var(--gray-400);
+  margin-top: 4px;
+}
+
+.head-text {
+  flex: 1;
+  min-width: 0;
 }
 
 .title {
   margin: 0;
   font-size: 22px;
-  color: #101828;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--gray-900);
 }
 
 .desc {
   margin: 6px 0 0;
-  color: #6a7282;
+  color: var(--gray-500);
   font-size: 14px;
 }
 
@@ -292,28 +385,74 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border: 1px solid rgba(3, 43, 113, 0.2);
-  background: rgba(3, 43, 113, 0.05);
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin-bottom: 12px;
+  border: 1px solid rgba(var(--kb-primary-rgb), 0.2);
+  background: rgba(var(--kb-primary-rgb), 0.05);
+  border-radius: 2px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
 }
 
 .selection-text {
-  color: #032b71;
+  color: var(--gray-700);
   font-weight: 500;
+  font-size: 14px;
+}
+
+.selection-num {
+  color: var(--kb-primary);
+  font-weight: 700;
 }
 
 .selection-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .table-panel {
-  border: 1px solid #d1d5dc;
-  border-radius: 6px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--gray-300);
+  border-radius: 2px;
   overflow: hidden;
-  background: #fff;
+  background: var(--black-white-white);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.table-panel :deep(.el-table__header th) {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--black-white-white) !important;
+}
+
+.table-panel :deep(.el-table) {
+  --el-table-border-color: var(--gray-200);
+}
+
+.table-footer-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--gray-200);
+  background: var(--gray-50);
+}
+
+.footer-summary {
+  font-size: 13px;
+  color: var(--gray-600);
+}
+
+.table-footer-bar :deep(.el-pagination) {
+  justify-content: flex-end;
 }
 
 .collection-cell {

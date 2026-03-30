@@ -1,7 +1,14 @@
-/* Design Tokens - 参考 logtool 设计体系，保持知识库主题色 #032b71 */
-/* 语义化变量与组件映射完整化，便于与 logtool 风格对齐 */
+/* Design Tokens — 知识库前端规范（Primary #032B71，Danger #CD011D，见 Obsidian 设计稿） */
 
 :root {
+  /* ========== 知识库语义色（KB semantic） ========== */
+  --kb-primary: #032b71;
+  --kb-primary-rgb: 3, 43, 113;
+  --kb-danger: #cd011d;
+  --kb-danger-rgb: 205, 1, 29;
+  --kb-drawer-header-bg: #f8fafc;
+  --kb-overlay-scrim: rgba(15, 23, 42, 0.4);
+  --kb-page-bg: #f5f6f8;
   /* ========== 基础色板 (Base Tokens) ========== */
   --black-white-white: #ffffff;
   --black-white-black: #000000;
@@ -122,8 +129,8 @@
   --alpha-light-300: rgba(26, 26, 26, 0.28);
   --alpha-light-500: rgba(26, 26, 26, 0.48);
 
-  /* ========== Element Plus - 主题色（知识库保持 #032b71） ========== */
-  --el-color-primary: #032b71;
+  /* ========== Element Plus - 主题色 ========== */
+  --el-color-primary: var(--kb-primary);
   --el-color-primary-light-3: #496ffe;
   --el-color-primary-light-5: #6b8aff;
   --el-color-primary-light-7: #9badff;
@@ -151,8 +158,8 @@
   --el-button-text-hover-text-color: var(--el-color-primary-dark-2);
   --el-button-text-active-text-color: var(--el-color-primary-dark-2);
 
-  /* ========== Element Plus 危险/警告/信息 ========== */
-  --el-color-danger: var(--red-500);
+  /* ========== Element Plus 危险/警告/信息（医疗红 #CD011D） ========== */
+  --el-color-danger: var(--kb-danger);
   --el-color-danger-light-3: var(--red-400);
   --el-color-danger-light-5: var(--red-300);
   --el-color-danger-light-7: var(--red-200);
@@ -230,4 +237,43 @@
 .el-dropdown-menu {
   border-radius: var(--radius-md) !important;
   box-shadow: var(--card-shadow) !important;
+}
+
+/* 知识库预览抽屉标题区（遮罩通过 el-drawer modal-class=kb-drawer-overlay） */
+.el-drawer__header {
+  background: var(--kb-drawer-header-bg);
+  border-bottom: 1px solid var(--slate-200);
+  margin-bottom: 0;
+  padding: 16px 24px;
+}
+
+.el-drawer__close-btn {
+  border-radius: var(--radius-sm);
+}
+
+.el-drawer__close-btn:hover {
+  background: rgba(226, 232, 240, 0.5);
+  color: var(--slate-700);
+}
+
+.kb-drawer-overlay {
+  background-color: var(--kb-overlay-scrim) !important;
+  backdrop-filter: blur(4px);
+}
+
+/* 预览抽屉：加宽 + 左侧深阴影与分隔线（规范 4.1 视觉） */
+.el-drawer.kb-preview-drawer {
+  width: min(1400px, 96vw) !important;
+  box-shadow: -12px 0 48px -12px rgba(15, 23, 42, 0.2),
+    -4px 0 24px rgba(15, 23, 42, 0.1);
+  border-left: 1px solid var(--slate-200);
+}
+
+.el-drawer.kb-preview-drawer .el-drawer__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
 }

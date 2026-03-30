@@ -34,6 +34,9 @@
       </div>
 
       <div class="form-content">
+        <div class="login-brand" aria-hidden="true">
+          <img src="/Icons/logo.svg" alt="LogTool" class="login-logo-icon" width="48" height="48" />
+        </div>
         <h1 class="welcome-title">{{ t('login.title') }}</h1>
         <p class="welcome-subtitle">{{ t('login.subtitle') }}</p>
         <el-form class="auth-form" @submit.prevent>
@@ -204,6 +207,14 @@ function changeLanguage(locale) {
   max-width: 400px;
   width: 100%;
   margin: 0 auto;
+}
+
+.login-brand {
+  margin-bottom: 1.5rem;
+}
+
+.login-logo-icon {
+  display: block;
 }
 
 .welcome-title {

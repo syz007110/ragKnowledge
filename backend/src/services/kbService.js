@@ -11,8 +11,10 @@ const {
   deleteObjectByUri,
   buildStorageConfig,
   buildUploadObjectKey,
-  uploadBuffer
+  uploadBuffer,
+  getObjectBufferByUri
 } = require('./objectStorageService');
+const { DEFAULT_RETRIEVAL_TOP_K } = require('../config/retrievalConstants');
 const { createHybridRetrievalService } = require('./retrievalService');
 const { createEsLexicalProvider } = require('./lexicalProvider/esLexicalProvider');
 const { createQdrantVectorProvider } = require('./vectorProvider/qdrantProvider');
@@ -511,19 +513,19 @@ function splitStructuredBlocksToChunks(blocks = [], maxChunkSize = 800) {
   const safeBlocks = Array.isArray(blocks) ? blocks : [];
   const headingStack = [];
   const atomicSegments = [];
+  /** Images before any text block: attach to first text segment when it appears. Otherwise images attach to the previous segment immediately. */
   let pendingImages = [];
-
-  const attachImagesToPrevious = () => {
-    if (!pendingImages.length || !atomicSegments.length) return;
-    const prev = atomicSegments[atomicSegments.length - 1];
-    prev.assetKeys = [...(prev.assetKeys || []), ...pendingImages];
-    pendingImages = [];
-  };
 
   safeBlocks.forEach((block) => {
     if (!block) return;
     if (block.type === 'image' && block.imageKey) {
-      pendingImages.push(String(block.imageKey));
+      const key = String(block.imageKey);
+      if (atomicSegments.length) {
+        const prev = atomicSegments[atomicSegments.length - 1];
+        prev.assetKeys = [...(prev.assetKeys || []), key];
+      } else {
+        pendingImages.push(key);
+      }
       return;
     }
     if (block.type === 'table_row') {
@@ -579,7 +581,6 @@ function splitStructuredBlocksToChunks(blocks = [], maxChunkSize = 800) {
     });
     pendingImages = [];
   });
-  attachImagesToPrevious();
 
   const expanded = [];
   atomicSegments.forEach((segment) => {
@@ -827,7 +828,7 @@ async function syncChunkToEs({ file, chunk, tags }) {
   return { skipped: false, esDocId: String(chunk.id) };
 }
 
-async function recallFromEs({ collectionId, query, topK = 5 }) {
+async function recallFromEs({ collectionId, query, topK = DEFAULT_RETRIEVAL_TOP_K }) {
   const config = buildEsConfig();
   if (!config.enabled) {
     return { skipped: true, hits: [] };
@@ -836,7 +837,7 @@ async function recallFromEs({ collectionId, query, topK = 5 }) {
   const auth = config.username ? { username: config.username, password: config.password } : undefined;
   const url = `${config.baseUrl}/${encodeURIComponent(config.indexName)}/_search`;
   const body = {
-    size: Math.max(1, Math.min(100, Number(topK) || 5)),
+    size: Math.max(1, Math.min(100, Number(topK) || DEFAULT_RETRIEVAL_TOP_K)),
     query: {
       bool: {
         must: [
@@ -896,7 +897,7 @@ async function recallFromEs({ collectionId, query, topK = 5 }) {
   return { skipped: false, hits };
 }
 
-function fuseAndRerankHits({ query, esHits = [], vecHits = [], topK = 5, rrfK = 60 }) {
+function fuseAndRerankHits({ query, esHits = [], vecHits = [], topK = DEFAULT_RETRIEVAL_TOP_K, rrfK = 60 }) {
   const map = new Map();
   const push = (hit, lane) => {
     const keyBase = hit.chunkId || `${hit.fileId}:${sha256(hit.content).slice(0, 12)}`;
@@ -955,7 +956,7 @@ function fuseAndRerankHits({ query, esHits = [], vecHits = [], topK = 5, rrfK = 
   });
 
   merged.sort((a, b) => b.rrfScore - a.rrfScore);
-  const fused = merged.slice(0, Math.max(1, Math.min(100, Number(topK) || 5)));
+  const fused = merged.slice(0, Math.max(1, Math.min(100, Number(topK) || DEFAULT_RETRIEVAL_TOP_K)));
 
   const reranked = [...fused].sort((a, b) => b.rerankScore - a.rerankScore);
   return {
@@ -964,7 +965,7 @@ function fuseAndRerankHits({ query, esHits = [], vecHits = [], topK = 5, rrfK = 
   };
 }
 
-async function retrievalDebug({ collectionId, query, esTopK = 5, vecTopK = 5, fuseTopK = 5 }) {
+async function retrievalDebug({ collectionId, query, esTopK = DEFAULT_RETRIEVAL_TOP_K, vecTopK = DEFAULT_RETRIEVAL_TOP_K, fuseTopK = DEFAULT_RETRIEVAL_TOP_K }) {
   const lexicalProvider = createEsLexicalProvider({
     axiosInstance: axios,
     buildEsConfig,
@@ -1820,6 +1821,194 @@ async function listCollectionFilesPaged({
   };
 }
 
+const PREVIEW_MAX_SOURCE_CHARS = Math.max(
+  100000,
+  Number.parseInt(process.env.KB_PREVIEW_MAX_SOURCE_CHARS || '5000000', 10) || 5000000
+);
+
+function finalizeIndexSummaryBucket(bucket) {
+  const b = bucket;
+  if (b.total <= 0) {
+    b.esStatus = 'pending';
+    b.vectorStatus = 'pending';
+    return;
+  }
+  b.esStatus = b.esFailed > 0 ? 'failed' : (b.esDone >= b.total ? 'done' : 'pending');
+  b.vectorStatus = b.vectorFailed > 0
+    ? 'failed'
+    : (b.vectorDone >= b.total ? 'done' : 'pending');
+}
+
+/**
+ * Preview payload: extracted cleaned text + chunk ranges for UI highlight.
+ * extractRawText is loaded lazily to avoid circular init with kbIngestProcessor.
+ */
+async function getFilePreviewData({ id }) {
+  const file = await KbFile.findOne({
+    where: {
+      id: Number(id),
+      isDeleted: 0
+    }
+  });
+  if (!file) {
+    return { error: 'not_found' };
+  }
+
+  const latestJob = await KbJob.findOne({
+    where: {
+      bizType: 'file',
+      bizId: file.id
+    },
+    order: [['createdAt', 'DESC']]
+  });
+  const latestJobStatus = latestJob ? String(latestJob.status || '') : null;
+
+  const chunkRows = await KbChunk.findAll({
+    where: {
+      fileId: file.id,
+      isDeleted: 0
+    },
+    include: [
+      {
+        model: KbChunkIndexState,
+        as: 'indexState',
+        required: false,
+        attributes: ['esStatus', 'vectorStatus']
+      }
+    ],
+    order: [['chunkNo', 'ASC']]
+  });
+
+  const requireVectorSync = buildVectorSyncConfig().enabled;
+  const indexSummary = {
+    total: 0,
+    esDone: 0,
+    esFailed: 0,
+    vectorDone: 0,
+    vectorFailed: 0,
+    esStatus: 'pending',
+    vectorStatus: 'pending'
+  };
+  chunkRows.forEach((chunk) => {
+    indexSummary.total += 1;
+    const esStatus = chunk.indexState?.esStatus || 'pending';
+    const vectorStatus = chunk.indexState?.vectorStatus || 'pending';
+    if (esStatus === 'done') indexSummary.esDone += 1;
+    if (esStatus === 'failed') indexSummary.esFailed += 1;
+    if (vectorStatus === 'done' || (!requireVectorSync && vectorStatus === 'skipped')) indexSummary.vectorDone += 1;
+    if (vectorStatus === 'failed') indexSummary.vectorFailed += 1;
+  });
+  finalizeIndexSummaryBucket(indexSummary);
+
+  const plain = file.toJSON();
+  const failedFile = String(plain.status || '').includes('failed') || plain.status === 'file_error';
+  const hasKeyChannelsReady = indexSummary.esStatus === 'done'
+    && (!requireVectorSync || indexSummary.vectorStatus === 'done');
+  let displayStatus = 'processing';
+  if (failedFile || latestJobStatus === 'failed') {
+    displayStatus = 'failed';
+  } else if (latestJobStatus === 'queued' || plain.status === 'uploaded') {
+    displayStatus = 'waiting';
+  } else if (plain.status === 'ready' && hasKeyChannelsReady) {
+    displayStatus = 'ready';
+  } else if (latestJobStatus === 'processing' || ['parsing', 'indexing'].includes(String(plain.status || ''))) {
+    displayStatus = 'processing';
+  }
+
+  const fileExt = normalizeFileExt(file.fileName, file.fileExt);
+  const fileDto = {
+    id: file.id,
+    fileName: file.fileName,
+    fileExt,
+    mimeType: file.mimeType || null,
+    fileSize: Number(file.fileSize || 0)
+  };
+
+  const previewable = displayStatus === 'ready' && chunkRows.length > 0;
+  if (!previewable) {
+    return {
+      previewable: false,
+      reasonKey: 'kb.previewNotReady',
+      displayStatus,
+      file: fileDto
+    };
+  }
+
+  let extractMod;
+  try {
+    extractMod = require('../workers/kbIngestProcessor');
+  } catch (err) {
+    return {
+      previewable: false,
+      reasonKey: 'kb.previewExtractFailed',
+      displayStatus,
+      file: fileDto
+    };
+  }
+
+  let parsed;
+  try {
+    parsed = await extractMod.extractRawText({
+      fileId: file.id,
+      kbJobId: 0,
+      rawText: ''
+    });
+  } catch (error) {
+    return {
+      previewable: false,
+      reasonKey: 'kb.previewExtractFailed',
+      displayStatus,
+      file: fileDto,
+      extractError: error.message
+    };
+  }
+
+  let sourceText = cleanTextByType(parsed.rawText || '', fileExt);
+  let sourceTruncated = false;
+  if (sourceText.length > PREVIEW_MAX_SOURCE_CHARS) {
+    sourceText = sourceText.slice(0, PREVIEW_MAX_SOURCE_CHARS);
+    sourceTruncated = true;
+  }
+
+  const chunkAssetMap = await getChunkAssetRefMap(chunkRows.map((c) => c.id));
+  const chunks = chunkRows.map((c) => {
+    const rawAssets = chunkAssetMap.get(String(c.id)) || [];
+    const assets = rawAssets.map((a) => ({
+      id: a.id,
+      assetType: a.assetType,
+      mimeType: a.mimeType,
+      sortNo: a.sortNo,
+      sourceRef: a.sourceRef,
+      meta: a.meta
+    }));
+    return {
+      id: c.id,
+      chunkNo: c.chunkNo,
+      chunkText: c.chunkText,
+      startOffset: c.startOffset,
+      endOffset: c.endOffset,
+      headingPath: Array.isArray(c.metaJson?.headingPath) ? c.metaJson.headingPath : [],
+      chunkType: String(c.metaJson?.chunkType || 'paragraph'),
+      assets
+    };
+  });
+
+  let previewMode = 'text';
+  if (fileExt === 'pdf') previewMode = 'pdf';
+  else if (fileExt === 'docx') previewMode = 'docx';
+  else if (fileExt === 'xlsx') previewMode = 'xlsx';
+
+  return {
+    previewable: true,
+    displayStatus,
+    file: fileDto,
+    sourceText,
+    sourceTruncated,
+    chunks,
+    previewMode
+  };
+}
+
 async function deleteFile({ id, user }) {
   const file = await KbFile.findOne({
     where: {
@@ -1983,6 +2172,46 @@ async function getFileDownloadInfo({ id }) {
   return {
     file,
     localPath
+  };
+}
+
+/**
+ * Load asset bytes for a file; verifies asset belongs to file. Used by authenticated GET asset stream.
+ */
+async function getFileAssetBuffer({ fileId, assetId }) {
+  const file = await KbFile.findOne({
+    where: {
+      id: Number(fileId),
+      isDeleted: 0
+    }
+  });
+  if (!file) return null;
+  const asset = await KbAsset.findOne({
+    where: {
+      id: Number(assetId),
+      fileId: file.id,
+      isDeleted: 0
+    }
+  });
+  if (!asset) return null;
+  const uri = String(asset.storageUri || '').trim();
+  if (!uri) return null;
+  let buffer;
+  if (isS3Uri(uri)) {
+    buffer = await getObjectBufferByUri(uri);
+  } else {
+    const localPath = resolveLocalPath(uri);
+    if (!localPath) return null;
+    try {
+      buffer = await fs.readFile(localPath);
+    } catch {
+      return null;
+    }
+  }
+  return {
+    buffer,
+    mimeType: String(asset.mimeType || '').trim() || 'application/octet-stream',
+    assetType: String(asset.assetType || '').trim() || 'image'
   };
 }
 
@@ -2347,7 +2576,8 @@ async function getChunkAssetRefMap(chunkIds = []) {
       storageUri: row.asset.storageUri,
       mimeType: row.asset.mimeType,
       sourceRef: row.asset.sourceRef,
-      meta: row.asset.metaJson || {}
+      meta: row.asset.metaJson || {},
+      sortNo: Number(row.sortNo) || 0
     });
   });
   return map;
@@ -2927,6 +3157,8 @@ module.exports = {
   renameFile,
   rebuildFile,
   getFileDownloadInfo,
+  getFilePreviewData,
+  getFileAssetBuffer,
   submitIngestTask,
   rollbackFailedIngestCreation,
   getJobStatus,
