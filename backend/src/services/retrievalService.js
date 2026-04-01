@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { DEFAULT_RETRIEVAL_TOP_K } = require('../config/retrievalConstants');
+const { DEFAULT_RETRIEVAL_TOP_K, DEFAULT_RETRIEVAL_SEARCH_TOP_K } = require('../config/retrievalConstants');
 
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
@@ -9,6 +9,19 @@ function tokenizeText(value = '') {
   const raw = String(value || '').toLowerCase();
   const terms = raw.match(/[\p{L}\p{N}_-]+/gu) || [];
   return terms.filter(Boolean);
+}
+
+function normalizeKeywords(keywords = []) {
+  if (Array.isArray(keywords)) {
+    return keywords
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
+  }
+  if (typeof keywords === 'string') {
+    const trimmed = keywords.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  return [];
 }
 
 function fuseAndRerankHits({ query, esHits = [], vecHits = [], topK = DEFAULT_RETRIEVAL_TOP_K, rrfK = 60 }) {
@@ -79,6 +92,39 @@ function fuseAndRerankHits({ query, esHits = [], vecHits = [], topK = DEFAULT_RE
   };
 }
 
+function clampSearchLimit(limit) {
+  const parsed = Number(limit);
+  if (!Number.isFinite(parsed)) return DEFAULT_RETRIEVAL_SEARCH_TOP_K;
+  return Math.min(5, Math.max(1, Math.floor(parsed)));
+}
+
+function toRetrievalSearchResponse(debugResult = {}, { limit = DEFAULT_RETRIEVAL_SEARCH_TOP_K } = {}) {
+  const safeLimit = clampSearchLimit(limit);
+  const reranked = Array.isArray(debugResult?.reranked) ? debugResult.reranked : [];
+  const hits = reranked.slice(0, safeLimit).map((item, index) => ({
+    ref: `K${index + 1}`,
+    score: Number(item?.rerankScore || 0),
+    title: String(item?.fileName || ''),
+    snippet: String(item?.content || ''),
+    headingPath: Array.isArray(item?.headingPath) ? item.headingPath.join(' / ') : '',
+    sourceRef: item?.sourceRef || null,
+    assets: Array.isArray(item?.assets) ? item.assets : [],
+    chunkId: String(item?.chunkId || ''),
+    chunkNo: Number(item?.chunkNo || 0)
+  }));
+
+  return {
+    query: String(debugResult?.query || ''),
+    lexicalQuery: String(debugResult?.lexicalQuery || debugResult?.query || ''),
+    hits,
+    meta: {
+      limit: safeLimit,
+      totalCandidates: reranked.length
+    },
+    timingMs: debugResult?.timingMs || {}
+  };
+}
+
 function createHybridRetrievalService({
   lexicalProvider,
   vectorProvider,
@@ -92,12 +138,16 @@ function createHybridRetrievalService({
   }
 
   return {
-    async retrievalDebug({ collectionId, query, esTopK = DEFAULT_RETRIEVAL_TOP_K, vecTopK = DEFAULT_RETRIEVAL_TOP_K, fuseTopK = DEFAULT_RETRIEVAL_TOP_K }) {
+    async retrievalDebug({ collectionId, query, keywords = [], esTopK = DEFAULT_RETRIEVAL_TOP_K, vecTopK = DEFAULT_RETRIEVAL_TOP_K, fuseTopK = DEFAULT_RETRIEVAL_TOP_K }) {
       const startedAt = Date.now();
       const safeQuery = String(query || '').trim();
+      const normalizedKeywords = normalizeKeywords(keywords);
+      const safeLexicalQuery = normalizedKeywords.length ? normalizedKeywords.join(' ') : safeQuery;
       if (!safeQuery) {
         return {
           query: '',
+          lexicalQuery: '',
+          keywords: [],
           retrieval: { esHits: [], vecHits: [], meta: { esSkipped: false, vectorSkipped: false } },
           fused: [],
           reranked: [],
@@ -106,7 +156,7 @@ function createHybridRetrievalService({
       }
 
       const esStart = Date.now();
-      const esResult = await lexicalProvider.search({ collectionId, query: safeQuery, topK: esTopK });
+      const esResult = await lexicalProvider.search({ collectionId, query: safeLexicalQuery, topK: esTopK });
       const esCost = Date.now() - esStart;
 
       const vectorStart = Date.now();
@@ -147,6 +197,8 @@ function createHybridRetrievalService({
 
       return {
         query: safeQuery,
+        lexicalQuery: safeLexicalQuery,
+        keywords: normalizedKeywords,
         retrieval: {
           esHits: withAssets(esResult.hits),
           vecHits: withAssets(vecResult.hits),
@@ -170,5 +222,7 @@ function createHybridRetrievalService({
 
 module.exports = {
   fuseAndRerankHits,
-  createHybridRetrievalService
+  normalizeKeywords,
+  createHybridRetrievalService,
+  toRetrievalSearchResponse
 };

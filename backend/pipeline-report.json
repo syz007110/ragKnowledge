@@ -1,0 +1,593 @@
+{
+  "generated_at": "2026-03-31T02:26:06.346Z",
+  "input": "D:\\code\\project\\medbot\\MKnowledge\\backend\\testing\\retrieval\\eval-datasets\\kb_chunk_testset_50.json (pipeline: retrieved in-process, K=10)",
+  "k": 10,
+  "n_examples": 50,
+  "schema": {
+    "gold": "{ chunk_id, relevance } relevance >= 1 counts as relevant",
+    "ranked_chunk_ids": "ordered ids from retrieval (first = rank 1)"
+  },
+  "per_example": [
+    {
+      "id": "q-00001",
+      "query": "EAP软件在模拟器系统里的主要职责是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00002",
+      "query": "屏幕控制软件的可执行程序路径是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00003",
+      "query": "鼠标控制软件的程序路径是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00004",
+      "query": "仿真软件 MentorLearn_Envelop.exe 的安装路径在哪？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00005",
+      "query": "屏幕配置文件 config.ini 的路径是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.5,
+        "ndcg@10": 0.6309297535714574
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00006",
+      "query": "FRS 模块对应的 Module ID number 是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00007",
+      "query": "Suturing（手术缝合）模块对应的编号是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.5,
+        "ndcg@10": 0.6309297535714574
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00008",
+      "query": "Essential Skills（基础技能）模块 ID 是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.5,
+        "ndcg@10": 0.6309297535714574
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00009",
+      "query": "Basic Skills（必备技能）模块 ID 是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.5,
+        "ndcg@10": 0.6309297535714574
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00010",
+      "query": "Prostatectomy（前列腺切除技术）模块 ID 是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00011",
+      "query": "模拟器临时 License 失效后，为什么必须激活才能继续运行？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00012",
+      "query": "进行模拟器日志拷贝前，如何从 MentorLearn 退回到桌面？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 0.8395700624665824
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00013",
+      "query": "日志目录中屏幕控制软件日志默认存放在哪个路径？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.16666666666666666,
+        "ndcg@10": 0.3562071871080222
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00014",
+      "query": "屏幕设置完成后，正常显示应满足哪些关键条件？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00015",
+      "query": "多显示器设置中如何把复制屏拆分为扩展模式？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00016",
+      "query": "哪些 Dongle 场景通常需要手动激活？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00017",
+      "query": "Dongle 激活流程里，申请邮件要发送到哪个固定邮箱？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00018",
+      "query": "图迈仿真平台对应的型号/规格是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.5,
+        "ndcg@10": 0.6309297535714574
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00019",
+      "query": "仿真主机在组件清单中的型号是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00020",
+      "query": "医生仿真平台通讯线的组件名称是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00021",
+      "query": "仿真平台电源输入规格（电压/频率）是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 0.8262346571285599
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00022",
+      "query": "仿真平台最大功率指标是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00023",
+      "query": "仿真平台推荐的保险丝规格是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00024",
+      "query": "仿真平台长度上限是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00025",
+      "query": "仿真平台宽度上限是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00026",
+      "query": "仿真平台高度上限是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00027",
+      "query": "仿真平台运行环境温度范围要求是多少？",
+      "metrics": {
+        "recall@10": 0,
+        "mrr@10": 0,
+        "ndcg@10": 0
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00028",
+      "query": "仿真平台运行环境的相对湿度范围是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00029",
+      "query": "仿真平台运行环境大气压强范围是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00030",
+      "query": "储存运输环境温度范围是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.25,
+        "ndcg@10": 0.4306765580733931
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00031",
+      "query": "储存运输环境相对湿度范围是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00032",
+      "query": "储存运输环境大气压强范围是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.5,
+        "ndcg@10": 0.6309297535714574
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00033",
+      "query": "系统开机前应先检查哪一类连接？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00034",
+      "query": "仿真平台和医生控制台的推荐开机顺序是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00035",
+      "query": "医生控制台的主控制臂自检是通过哪里触发的？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.5,
+        "ndcg@10": 0.6309297535714574
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00036",
+      "query": "进入仿真训练前，用户在哪个界面输入账号密码登录？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00037",
+      "query": "MentorLearn 里 Guest 角色的权限特征是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00038",
+      "query": "批量自动建用户时，前缀规则会如何作用到账号信息？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00039",
+      "query": "删除群组用户后，对课程和账户状态有什么影响？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.3333333333333333,
+        "ndcg@10": 0.5
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00040",
+      "query": "在 MentorLearn 里修改用户密码的基本步骤是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00041",
+      "query": "删除用户时有哪些限制条件或注意事项？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.5,
+        "ndcg@10": 0.6309297535714574
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00042",
+      "query": "机器人手术基本技能模块主要训练哪些能力？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.2,
+        "ndcg@10": 0.38685280723454163
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00043",
+      "query": "离合器练习任务中，踩住离合踏板的训练目的是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00044",
+      "query": "30度内窥镜练习里单个目标的限时要求是多少？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00045",
+      "query": "腕部操作训练1对器械操控提出了什么关键要求？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.5,
+        "ndcg@10": 0.6309297535714574
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00046",
+      "query": "Emulator API 中离合脚踏（Clutch）对应的变量名是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00047",
+      "query": "API 里左电切（Left Cut）信号对应的变量名是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00048",
+      "query": "EAP 软件当前受控版本是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 1
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00049",
+      "query": "模拟器仿真软件 mentorlearn 的当前受控版本是什么？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 1,
+        "ndcg@10": 0.9134015924715543
+      },
+      "ranked_length": 20
+    },
+    {
+      "id": "q-00050",
+      "query": "兼容性说明中为什么强调模拟器背包与医生台车的光端机型号和适配器必须一致？",
+      "metrics": {
+        "recall@10": 1,
+        "mrr@10": 0.3333333333333333,
+        "ndcg@10": 0.5
+      },
+      "ranked_length": 20
+    }
+  ],
+  "summary": {
+    "recall@10": {
+      "metric": "recall@10",
+      "n": 50,
+      "mean": 0.98,
+      "failure_rate": 0.02,
+      "failure_count": 1,
+      "percentiles": {
+        "p10": 1,
+        "p25": 1,
+        "p50": 1,
+        "p75": 1,
+        "p90": 1,
+        "min": 0,
+        "max": 1
+      },
+      "ci95_mean_bootstrap": {
+        "low": 0.94,
+        "high": 1,
+        "iterations": 1000,
+        "seed": 608135816
+      }
+    },
+    "mrr@10": {
+      "metric": "mrr@10",
+      "n": 50,
+      "mean": 0.8156666666666668,
+      "failure_rate": 0.02,
+      "failure_count": 1,
+      "percentiles": {
+        "p10": 0.3333333333333333,
+        "p25": 0.5,
+        "p50": 1,
+        "p75": 1,
+        "p90": 1,
+        "min": 0,
+        "max": 1
+      },
+      "ci95_mean_bootstrap": {
+        "low": 0.7362916666666666,
+        "high": 0.8946750000000001,
+        "iterations": 1000,
+        "seed": 608135817
+      }
+    },
+    "ndcg@10": {
+      "metric": "ndcg@10",
+      "n": 50,
+      "mean": 0.8486262129325154,
+      "failure_rate": 0.02,
+      "failure_count": 1,
+      "percentiles": {
+        "p10": 0.5,
+        "p25": 0.6309297535714574,
+        "p50": 1,
+        "p75": 1,
+        "p90": 1,
+        "min": 0,
+        "max": 1
+      },
+      "ci95_mean_bootstrap": {
+        "low": 0.7783278113315316,
+        "high": 0.9067957492287797,
+        "iterations": 1000,
+        "seed": 608135818
+      }
+    }
+  },
+  "failed_recall_at_k": [
+    "q-00027"
+  ],
+  "failed_recall_note": "No gold chunk with relevance>=1 in top-10 (same as recall@10===0).",
+  "pipeline": {
+    "source_input": "D:\\code\\project\\medbot\\MKnowledge\\backend\\testing\\retrieval\\eval-datasets\\kb_chunk_testset_50.json",
+    "collection_id": 2,
+    "rank_source": "reranked",
+    "esTopK": 20,
+    "vecTopK": 20,
+    "fuseTopK": 20,
+    "ranked_saved": "D:\\code\\project\\medbot\\MKnowledge\\backend\\testing\\retrieval\\eval-datasets\\kb_chunk_testset_50.ranked.json"
+  }
+}

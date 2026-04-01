@@ -14,6 +14,7 @@ const {
   uploadCollectionFiles,
   createIngestTask,
   retrievalDebugItem,
+  retrievalSearchItem,
   getTaskStatus,
   renameFileItem,
   deleteFileItem,
@@ -45,6 +46,7 @@ router.post('/collections/:id/files/upload', requireKbPermission('kb:upload'), k
 
 router.post('/ingest-tasks', requireKbPermission('kb:upload'), createIngestTask);
 router.post('/retrieval/debug', requireKbPermission('kb:read'), retrievalDebugItem);
+router.post('/retrieval/search', requireKbPermission('kb:read'), retrievalSearchItem);
 router.get('/ingest-tasks/:id', requireKbPermission('kb:read'), getTaskStatus);
 router.get('/files/:id/preview', requireKbPermission('kb:read'), previewFileItem);
 router.get('/files/:id/onlyoffice-config', requireKbPermission('kb:read'), getOnlyofficeEditorConfigItem);

@@ -1,0 +1,2418 @@
+[
+  {
+    "id": "q-00001",
+    "query": "EAP软件在模拟器系统里的主要职责是什么？",
+    "gold": [
+      {
+        "chunk_id": "6949",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6949",
+      "6951",
+      "6992",
+      "6993",
+      "7009",
+      "7007",
+      "7010",
+      "7005",
+      "7014",
+      "7015",
+      "7006",
+      "6982",
+      "6950",
+      "7075",
+      "6985",
+      "6984",
+      "6954",
+      "6988",
+      "6991",
+      "6974"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 115,
+        "vector": 866,
+        "fuseRerank": 5,
+        "total": 2113
+      }
+    }
+  },
+  {
+    "id": "q-00002",
+    "query": "屏幕控制软件的可执行程序路径是什么？",
+    "gold": [
+      {
+        "chunk_id": "6950",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6950",
+      "6951",
+      "6948",
+      "6975",
+      "6976",
+      "6949",
+      "6991",
+      "6981",
+      "6989",
+      "7010",
+      "6952",
+      "7016",
+      "7075",
+      "7598",
+      "7634",
+      "6947",
+      "7674",
+      "7635",
+      "7636",
+      "7675"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 85,
+        "vector": 545,
+        "fuseRerank": 1,
+        "total": 675
+      }
+    }
+  },
+  {
+    "id": "q-00003",
+    "query": "鼠标控制软件的程序路径是什么？",
+    "gold": [
+      {
+        "chunk_id": "6951",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6951",
+      "6948",
+      "6950",
+      "6991",
+      "6981",
+      "7010",
+      "6989",
+      "6949",
+      "6952",
+      "7075",
+      "7634",
+      "7674",
+      "6947",
+      "7635",
+      "7636",
+      "7016",
+      "7675",
+      "7676",
+      "6954",
+      "7611"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 41,
+        "vector": 556,
+        "fuseRerank": 0,
+        "total": 651
+      }
+    }
+  },
+  {
+    "id": "q-00004",
+    "query": "仿真软件 MentorLearn_Envelop.exe 的安装路径在哪？",
+    "gold": [
+      {
+        "chunk_id": "6952",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6952",
+      "6950",
+      "6993",
+      "6992",
+      "6987",
+      "6979",
+      "7009",
+      "7007",
+      "7015",
+      "6949",
+      "6951",
+      "6997",
+      "6948",
+      "7600",
+      "6954",
+      "7580",
+      "7010",
+      "7068",
+      "7637",
+      "6982"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 138,
+        "vector": 551,
+        "fuseRerank": 1,
+        "total": 775
+      }
+    }
+  },
+  {
+    "id": "q-00005",
+    "query": "屏幕配置文件 config.ini 的路径是什么？",
+    "gold": [
+      {
+        "chunk_id": "6954",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6976",
+      "6954",
+      "6975",
+      "7068",
+      "6950",
+      "6974",
+      "6951",
+      "6949",
+      "6953",
+      "7075",
+      "7849",
+      "6982",
+      "6952",
+      "7598",
+      "6948",
+      "7610",
+      "7637",
+      "7677",
+      "7638",
+      "7611"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 95,
+        "vector": 387,
+        "fuseRerank": 0,
+        "total": 612
+      }
+    }
+  },
+  {
+    "id": "q-00006",
+    "query": "FRS 模块对应的 Module ID number 是多少？",
+    "gold": [
+      {
+        "chunk_id": "6956",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6956",
+      "7070",
+      "6957",
+      "7071",
+      "6958",
+      "7072",
+      "7069",
+      "6955",
+      "6959",
+      "7073",
+      "6960",
+      "7074",
+      "7655",
+      "7654",
+      "7656",
+      "7665",
+      "7013",
+      "7960",
+      "7008",
+      "7004"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 66,
+        "vector": 418,
+        "fuseRerank": 0,
+        "total": 599
+      }
+    }
+  },
+  {
+    "id": "q-00007",
+    "query": "Suturing（手术缝合）模块对应的编号是多少？",
+    "gold": [
+      {
+        "chunk_id": "6957",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7059",
+      "6957",
+      "7071",
+      "7792",
+      "7781",
+      "7785",
+      "7788",
+      "7782",
+      "7784",
+      "7787",
+      "7811",
+      "7789",
+      "7806",
+      "7805",
+      "7783",
+      "7786",
+      "7803",
+      "7660",
+      "7659",
+      "8002"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 47,
+        "vector": 1398,
+        "fuseRerank": 0,
+        "total": 1485
+      }
+    }
+  },
+  {
+    "id": "q-00008",
+    "query": "Essential Skills（基础技能）模块 ID 是多少？",
+    "gold": [
+      {
+        "chunk_id": "6958",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7058",
+      "6958",
+      "7072",
+      "6959",
+      "7073",
+      "7616",
+      "6956",
+      "7615",
+      "7070",
+      "7742",
+      "6955",
+      "7069",
+      "6960",
+      "7776",
+      "7074",
+      "7743",
+      "7787",
+      "7772",
+      "7659",
+      "7071"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 61,
+        "vector": 426,
+        "fuseRerank": 0,
+        "total": 518
+      }
+    }
+  },
+  {
+    "id": "q-00009",
+    "query": "Basic Skills（必备技能）模块 ID 是多少？",
+    "gold": [
+      {
+        "chunk_id": "6959",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7056",
+      "6959",
+      "7073",
+      "6958",
+      "7072",
+      "7742",
+      "7743",
+      "7747",
+      "7750",
+      "7748",
+      "7776",
+      "7069",
+      "7659",
+      "6955",
+      "7615",
+      "7071",
+      "6957",
+      "6960",
+      "7074",
+      "7010"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 51,
+        "vector": 423,
+        "fuseRerank": 0,
+        "total": 525
+      }
+    }
+  },
+  {
+    "id": "q-00010",
+    "query": "Prostatectomy（前列腺切除技术）模块 ID 是多少？",
+    "gold": [
+      {
+        "chunk_id": "6960",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6960",
+      "7074",
+      "7813",
+      "7814",
+      "7853",
+      "7820",
+      "7816",
+      "7817",
+      "7057",
+      "7825",
+      "7881",
+      "7824",
+      "7878",
+      "7819",
+      "7815",
+      "7821",
+      "7827",
+      "7906",
+      "7822",
+      "7879"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 44,
+        "vector": 565,
+        "fuseRerank": 0,
+        "total": 686
+      }
+    }
+  },
+  {
+    "id": "q-00011",
+    "query": "模拟器临时 License 失效后，为什么必须激活才能继续运行？",
+    "gold": [
+      {
+        "chunk_id": "6962",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6962",
+      "6972",
+      "6973",
+      "7010",
+      "7006",
+      "7004",
+      "6961",
+      "7016",
+      "7985",
+      "6949",
+      "6953",
+      "6982",
+      "7013",
+      "6954",
+      "6951",
+      "7007",
+      "7938",
+      "7613",
+      "7596",
+      "6991"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 69,
+        "vector": 343,
+        "fuseRerank": 0,
+        "total": 448
+      }
+    }
+  },
+  {
+    "id": "q-00012",
+    "query": "进行模拟器日志拷贝前，如何从 MentorLearn 退回到桌面？",
+    "gold": [
+      {
+        "chunk_id": "7068",
+        "relevance": 3
+      },
+      {
+        "chunk_id": "6954",
+        "relevance": 2
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7068",
+      "6993",
+      "6987",
+      "6982",
+      "6979",
+      "6975",
+      "6992",
+      "7009",
+      "7600",
+      "6954",
+      "6997",
+      "7985",
+      "7602",
+      "6953",
+      "7869",
+      "6976",
+      "6949",
+      "6951",
+      "7931",
+      "6985"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 44,
+        "vector": 1149,
+        "fuseRerank": 0,
+        "total": 1261
+      }
+    }
+  },
+  {
+    "id": "q-00013",
+    "query": "日志目录中屏幕控制软件日志默认存放在哪个路径？",
+    "gold": [
+      {
+        "chunk_id": "7075",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6950",
+      "7068",
+      "6976",
+      "6951",
+      "6948",
+      "7075",
+      "6975",
+      "6949",
+      "6991",
+      "6981",
+      "8004",
+      "7598",
+      "7634",
+      "7674",
+      "6989",
+      "6954",
+      "7545",
+      "7985",
+      "6947",
+      "6952"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 56,
+        "vector": 448,
+        "fuseRerank": 1,
+        "total": 540
+      }
+    }
+  },
+  {
+    "id": "q-00014",
+    "query": "屏幕设置完成后，正常显示应满足哪些关键条件？",
+    "gold": [
+      {
+        "chunk_id": "6975",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6975",
+      "6976",
+      "6974",
+      "6953",
+      "6950",
+      "7613",
+      "7612",
+      "7596",
+      "6954",
+      "7598",
+      "7849",
+      "7075",
+      "7844",
+      "7594",
+      "7047",
+      "7839",
+      "7622",
+      "7610",
+      "6952",
+      "6982"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 41,
+        "vector": 522,
+        "fuseRerank": 0,
+        "total": 597
+      }
+    }
+  },
+  {
+    "id": "q-00015",
+    "query": "多显示器设置中如何把复制屏拆分为扩展模式？",
+    "gold": [
+      {
+        "chunk_id": "6976",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6976",
+      "6975",
+      "6950",
+      "6974",
+      "6953",
+      "7659",
+      "7075",
+      "7658",
+      "7849",
+      "7596",
+      "7619",
+      "7580",
+      "7937",
+      "6982",
+      "7941",
+      "6997",
+      "6952",
+      "7598",
+      "7938",
+      "7605"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 55,
+        "vector": 1317,
+        "fuseRerank": 0,
+        "total": 1431
+      }
+    }
+  },
+  {
+    "id": "q-00016",
+    "query": "哪些 Dongle 场景通常需要手动激活？",
+    "gold": [
+      {
+        "chunk_id": "6972",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6972",
+      "6971",
+      "6973",
+      "6962",
+      "7661",
+      "7938",
+      "7594",
+      "7973",
+      "7596",
+      "7940",
+      "7016",
+      "7751",
+      "7006",
+      "7939",
+      "7010",
+      "7748",
+      "7582",
+      "7663",
+      "6975",
+      "7659"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 43,
+        "vector": 885,
+        "fuseRerank": 0,
+        "total": 990
+      }
+    }
+  },
+  {
+    "id": "q-00017",
+    "query": "Dongle 激活流程里，申请邮件要发送到哪个固定邮箱？",
+    "gold": [
+      {
+        "chunk_id": "6973",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6973",
+      "6971",
+      "6972",
+      "6962",
+      "7041",
+      "7046",
+      "7939",
+      "7037",
+      "7795",
+      "7010",
+      "7661",
+      "6993",
+      "7937",
+      "7596",
+      "7973",
+      "7794",
+      "6992",
+      "7930",
+      "7006",
+      "7969"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 43,
+        "vector": 369,
+        "fuseRerank": 0,
+        "total": 451
+      }
+    }
+  },
+  {
+    "id": "q-00018",
+    "query": "图迈仿真平台对应的型号/规格是什么？",
+    "gold": [
+      {
+        "chunk_id": "7552",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7554",
+      "7552",
+      "7561",
+      "7562",
+      "7548",
+      "7566",
+      "7555",
+      "7586",
+      "7567",
+      "7568",
+      "7016",
+      "7563",
+      "7580",
+      "7587",
+      "7564",
+      "7543",
+      "7589",
+      "7951",
+      "7560",
+      "7958"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 56,
+        "vector": 404,
+        "fuseRerank": 0,
+        "total": 502
+      }
+    }
+  },
+  {
+    "id": "q-00019",
+    "query": "仿真主机在组件清单中的型号是什么？",
+    "gold": [
+      {
+        "chunk_id": "7554",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7554",
+      "7556",
+      "7555",
+      "7557",
+      "7558",
+      "7016",
+      "7552",
+      "7010",
+      "6952",
+      "7663",
+      "7750",
+      "7548",
+      "7587",
+      "7596",
+      "6984",
+      "7963",
+      "7580",
+      "7610",
+      "6991",
+      "7747"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 49,
+        "vector": 355,
+        "fuseRerank": 1,
+        "total": 439
+      }
+    }
+  },
+  {
+    "id": "q-00020",
+    "query": "医生仿真平台通讯线的组件名称是什么？",
+    "gold": [
+      {
+        "chunk_id": "7556",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7556",
+      "7587",
+      "7557",
+      "7588",
+      "7558",
+      "7589",
+      "7555",
+      "7586",
+      "7584",
+      "7554",
+      "7591",
+      "7006",
+      "6952",
+      "6949",
+      "6950",
+      "6948",
+      "7596",
+      "7552",
+      "7580",
+      "7548"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 48,
+        "vector": 327,
+        "fuseRerank": 0,
+        "total": 407
+      }
+    }
+  },
+  {
+    "id": "q-00021",
+    "query": "仿真平台电源输入规格（电压/频率）是多少？",
+    "gold": [
+      {
+        "chunk_id": "7561",
+        "relevance": 3
+      },
+      {
+        "chunk_id": "7560",
+        "relevance": 1
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7561",
+      "7961",
+      "7969",
+      "7963",
+      "7562",
+      "7563",
+      "7586",
+      "7555",
+      "7554",
+      "7588",
+      "7560",
+      "7582",
+      "7589",
+      "7559",
+      "7962",
+      "7552",
+      "7548",
+      "7975",
+      "7949",
+      "7951"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 57,
+        "vector": 381,
+        "fuseRerank": 1,
+        "total": 498
+      }
+    }
+  },
+  {
+    "id": "q-00022",
+    "query": "仿真平台最大功率指标是多少？",
+    "gold": [
+      {
+        "chunk_id": "7562",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7562",
+      "7561",
+      "7563",
+      "7554",
+      "7586",
+      "7566",
+      "7567",
+      "7555",
+      "7568",
+      "7587",
+      "7588",
+      "7560",
+      "7975",
+      "7589",
+      "7582",
+      "7559",
+      "7983",
+      "7552",
+      "7564",
+      "7610"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 55,
+        "vector": 343,
+        "fuseRerank": 0,
+        "total": 427
+      }
+    }
+  },
+  {
+    "id": "q-00023",
+    "query": "仿真平台推荐的保险丝规格是什么？",
+    "gold": [
+      {
+        "chunk_id": "7563",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7563",
+      "7561",
+      "7562",
+      "7554",
+      "7587",
+      "7588",
+      "7555",
+      "7586",
+      "7557",
+      "7566",
+      "7556",
+      "7567",
+      "7582",
+      "7951",
+      "7560",
+      "7958",
+      "7967",
+      "7589",
+      "7552",
+      "7975"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 44,
+        "vector": 393,
+        "fuseRerank": 1,
+        "total": 484
+      }
+    }
+  },
+  {
+    "id": "q-00024",
+    "query": "仿真平台长度上限是多少？",
+    "gold": [
+      {
+        "chunk_id": "7566",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7566",
+      "7567",
+      "7588",
+      "7568",
+      "7587",
+      "7586",
+      "7589",
+      "7554",
+      "7561",
+      "7562",
+      "7564",
+      "7552",
+      "7565",
+      "7548",
+      "7563",
+      "7610",
+      "7555",
+      "7557",
+      "7556",
+      "7558"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 40,
+        "vector": 418,
+        "fuseRerank": 0,
+        "total": 508
+      }
+    }
+  },
+  {
+    "id": "q-00025",
+    "query": "仿真平台宽度上限是多少？",
+    "gold": [
+      {
+        "chunk_id": "7567",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7567",
+      "7566",
+      "7568",
+      "7588",
+      "7554",
+      "7586",
+      "7561",
+      "7562",
+      "7587",
+      "7589",
+      "7564",
+      "7552",
+      "7565",
+      "7548",
+      "7006",
+      "7563",
+      "7610",
+      "7555",
+      "7557",
+      "7556"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 49,
+        "vector": 1115,
+        "fuseRerank": 1,
+        "total": 1198
+      }
+    }
+  },
+  {
+    "id": "q-00026",
+    "query": "仿真平台高度上限是多少？",
+    "gold": [
+      {
+        "chunk_id": "7568",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7568",
+      "7566",
+      "7567",
+      "7554",
+      "7562",
+      "7561",
+      "7599",
+      "7587",
+      "7588",
+      "7552",
+      "7589",
+      "7564",
+      "7586",
+      "7548",
+      "7610",
+      "7565",
+      "7563",
+      "7613",
+      "7580",
+      "7555"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 42,
+        "vector": 371,
+        "fuseRerank": 1,
+        "total": 449
+      }
+    }
+  },
+  {
+    "id": "q-00027",
+    "query": "仿真平台运行环境温度范围要求是多少？",
+    "gold": [
+      {
+        "chunk_id": "7570",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7571",
+      "7575",
+      "7576",
+      "7572",
+      "7951",
+      "7554",
+      "7958",
+      "7967",
+      "7566",
+      "7574",
+      "7561",
+      "7587",
+      "7588",
+      "7548",
+      "7589",
+      "7570",
+      "7586",
+      "7552",
+      "7949",
+      "7582"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 39,
+        "vector": 1410,
+        "fuseRerank": 0,
+        "total": 1482
+      }
+    }
+  },
+  {
+    "id": "q-00028",
+    "query": "仿真平台运行环境的相对湿度范围是多少？",
+    "gold": [
+      {
+        "chunk_id": "7571",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7571",
+      "7575",
+      "7958",
+      "7576",
+      "7951",
+      "7572",
+      "7967",
+      "7960",
+      "7554",
+      "7566",
+      "7567",
+      "7561",
+      "7587",
+      "7564",
+      "7588",
+      "7589",
+      "7548",
+      "7552",
+      "7586",
+      "7949"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 42,
+        "vector": 428,
+        "fuseRerank": 1,
+        "total": 506
+      }
+    }
+  },
+  {
+    "id": "q-00029",
+    "query": "仿真平台运行环境大气压强范围是多少？",
+    "gold": [
+      {
+        "chunk_id": "7572",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7572",
+      "7576",
+      "7561",
+      "7951",
+      "7958",
+      "7967",
+      "7554",
+      "7566",
+      "7567",
+      "7568",
+      "7571",
+      "7564",
+      "7575",
+      "7973",
+      "6952",
+      "7996",
+      "7587",
+      "7588",
+      "7562",
+      "7552"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 54,
+        "vector": 1023,
+        "fuseRerank": 0,
+        "total": 1109
+      }
+    }
+  },
+  {
+    "id": "q-00030",
+    "query": "储存运输环境温度范围是多少？",
+    "gold": [
+      {
+        "chunk_id": "7574",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7575",
+      "7571",
+      "7572",
+      "7574",
+      "7573",
+      "7576",
+      "7570",
+      "7973",
+      "7994",
+      "6983",
+      "7960",
+      "7983",
+      "7969",
+      "7628",
+      "7967",
+      "7668",
+      "7958",
+      "7756",
+      "7972",
+      "7962"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 40,
+        "vector": 346,
+        "fuseRerank": 0,
+        "total": 420
+      }
+    }
+  },
+  {
+    "id": "q-00031",
+    "query": "储存运输环境相对湿度范围是多少？",
+    "gold": [
+      {
+        "chunk_id": "7575",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7575",
+      "7571",
+      "7572",
+      "7576",
+      "7573",
+      "7960",
+      "7574",
+      "7570",
+      "7995",
+      "7973",
+      "7969",
+      "6983",
+      "7983",
+      "7962",
+      "7958",
+      "7967",
+      "7964",
+      "7970",
+      "7972",
+      "7988"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 42,
+        "vector": 385,
+        "fuseRerank": 0,
+        "total": 464
+      }
+    }
+  },
+  {
+    "id": "q-00032",
+    "query": "储存运输环境大气压强范围是多少？",
+    "gold": [
+      {
+        "chunk_id": "7576",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7572",
+      "7576",
+      "7575",
+      "7571",
+      "7573",
+      "7996",
+      "7973",
+      "7960",
+      "7574",
+      "7570",
+      "7963",
+      "7983",
+      "7969",
+      "6983",
+      "7964",
+      "7988",
+      "7972",
+      "7958",
+      "7975",
+      "7962"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 46,
+        "vector": 1521,
+        "fuseRerank": 0,
+        "total": 1601
+      }
+    }
+  },
+  {
+    "id": "q-00033",
+    "query": "系统开机前应先检查哪一类连接？",
+    "gold": [
+      {
+        "chunk_id": "7594",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7594",
+      "7596",
+      "7593",
+      "7582",
+      "7590",
+      "7945",
+      "7591",
+      "7597",
+      "6953",
+      "7819",
+      "7598",
+      "7543",
+      "7581",
+      "7818",
+      "7588",
+      "7623",
+      "7586",
+      "7870",
+      "7584",
+      "7817"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 134,
+        "vector": 379,
+        "fuseRerank": 1,
+        "total": 549
+      }
+    }
+  },
+  {
+    "id": "q-00034",
+    "query": "仿真平台和医生控制台的推荐开机顺序是什么？",
+    "gold": [
+      {
+        "chunk_id": "7596",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7596",
+      "7588",
+      "7589",
+      "7587",
+      "6950",
+      "7557",
+      "7006",
+      "7016",
+      "7599",
+      "6949",
+      "7582",
+      "7613",
+      "6948",
+      "7591",
+      "7548",
+      "7556",
+      "7580",
+      "7558",
+      "6953",
+      "7975"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 45,
+        "vector": 364,
+        "fuseRerank": 0,
+        "total": 451
+      }
+    }
+  },
+  {
+    "id": "q-00035",
+    "query": "医生控制台的主控制臂自检是通过哪里触发的？",
+    "gold": [
+      {
+        "chunk_id": "7598",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6948",
+      "7598",
+      "7047",
+      "7675",
+      "7016",
+      "7635",
+      "7674",
+      "7634",
+      "7676",
+      "7636",
+      "6961",
+      "7580",
+      "7587",
+      "7596",
+      "7031",
+      "7597",
+      "7619",
+      "7589",
+      "7588",
+      "7048"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 51,
+        "vector": 365,
+        "fuseRerank": 0,
+        "total": 448
+      }
+    }
+  },
+  {
+    "id": "q-00036",
+    "query": "进入仿真训练前，用户在哪个界面输入账号密码登录？",
+    "gold": [
+      {
+        "chunk_id": "7600",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7600",
+      "7610",
+      "6954",
+      "7604",
+      "7613",
+      "7660",
+      "7599",
+      "7586",
+      "7587",
+      "7596",
+      "7589",
+      "7602",
+      "7548",
+      "7962",
+      "6952",
+      "7746",
+      "7985",
+      "7868",
+      "7068",
+      "7963"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 57,
+        "vector": 428,
+        "fuseRerank": 1,
+        "total": 543
+      }
+    }
+  },
+  {
+    "id": "q-00037",
+    "query": "MentorLearn 里 Guest 角色的权限特征是什么？",
+    "gold": [
+      {
+        "chunk_id": "7604",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7604",
+      "6987",
+      "6979",
+      "6997",
+      "6982",
+      "7983",
+      "7610",
+      "7603",
+      "7733",
+      "7605",
+      "7606",
+      "7607",
+      "7600",
+      "7608",
+      "7825",
+      "7824",
+      "7793",
+      "7747",
+      "7994",
+      "7995"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 45,
+        "vector": 382,
+        "fuseRerank": 0,
+        "total": 478
+      }
+    }
+  },
+  {
+    "id": "q-00038",
+    "query": "批量自动建用户时，前缀规则会如何作用到账号信息？",
+    "gold": [
+      {
+        "chunk_id": "7605",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7605",
+      "7604",
+      "7610",
+      "7865",
+      "7880",
+      "7894",
+      "7608",
+      "7907",
+      "7607",
+      "7852",
+      "7625",
+      "7606",
+      "7665",
+      "6996",
+      "7753",
+      "6955",
+      "7791",
+      "7069",
+      "7941",
+      "7603"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 47,
+        "vector": 522,
+        "fuseRerank": 1,
+        "total": 601
+      }
+    }
+  },
+  {
+    "id": "q-00039",
+    "query": "删除群组用户后，对课程和账户状态有什么影响？",
+    "gold": [
+      {
+        "chunk_id": "7606",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7608",
+      "7603",
+      "7606",
+      "7607",
+      "7602",
+      "7604",
+      "7605",
+      "7972",
+      "7865",
+      "6954",
+      "7880",
+      "7613",
+      "7894",
+      "7610",
+      "7907",
+      "7609",
+      "7600",
+      "7852",
+      "7812",
+      "7625"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 37,
+        "vector": 1335,
+        "fuseRerank": 1,
+        "total": 1418
+      }
+    }
+  },
+  {
+    "id": "q-00040",
+    "query": "在 MentorLearn 里修改用户密码的基本步骤是什么？",
+    "gold": [
+      {
+        "chunk_id": "7607",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7607",
+      "7606",
+      "7605",
+      "7600",
+      "7604",
+      "7602",
+      "7610",
+      "6987",
+      "6979",
+      "7663",
+      "7660",
+      "6997",
+      "7824",
+      "6993",
+      "7963",
+      "6992",
+      "7785",
+      "7786",
+      "7818",
+      "7545"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 41,
+        "vector": 1335,
+        "fuseRerank": 1,
+        "total": 1449
+      }
+    }
+  },
+  {
+    "id": "q-00041",
+    "query": "删除用户时有哪些限制条件或注意事项？",
+    "gold": [
+      {
+        "chunk_id": "7608",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7578",
+      "7608",
+      "7603",
+      "7047",
+      "7607",
+      "7972",
+      "7606",
+      "7865",
+      "7880",
+      "7604",
+      "7894",
+      "7605",
+      "7907",
+      "7852",
+      "7613",
+      "7625",
+      "7945",
+      "7665",
+      "7610",
+      "7753"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 62,
+        "vector": 1140,
+        "fuseRerank": 1,
+        "total": 1235
+      }
+    }
+  },
+  {
+    "id": "q-00042",
+    "query": "机器人手术基本技能模块主要训练哪些能力？",
+    "gold": [
+      {
+        "chunk_id": "7616",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7623",
+      "7748",
+      "7618",
+      "7751",
+      "7616",
+      "7619",
+      "7745",
+      "7622",
+      "7621",
+      "7747",
+      "7658",
+      "7659",
+      "7742",
+      "7615",
+      "7661",
+      "7743",
+      "7660",
+      "7617",
+      "7663",
+      "7787"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 41,
+        "vector": 3851,
+        "fuseRerank": 0,
+        "total": 3921
+      }
+    }
+  },
+  {
+    "id": "q-00043",
+    "query": "离合器练习任务中，踩住离合踏板的训练目的是什么？",
+    "gold": [
+      {
+        "chunk_id": "7619",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7619",
+      "7644",
+      "7647",
+      "7645",
+      "7649",
+      "7648",
+      "7652",
+      "7663",
+      "7641",
+      "7642",
+      "7643",
+      "7646",
+      "7650",
+      "7651",
+      "7616",
+      "7058",
+      "7660",
+      "7787",
+      "7640",
+      "7653"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 35,
+        "vector": 339,
+        "fuseRerank": 0,
+        "total": 407
+      }
+    }
+  },
+  {
+    "id": "q-00044",
+    "query": "30度内窥镜练习里单个目标的限时要求是多少？",
+    "gold": [
+      {
+        "chunk_id": "7621",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7621",
+      "7620",
+      "7058",
+      "7644",
+      "7630",
+      "7758",
+      "7661",
+      "7647",
+      "7852",
+      "7649",
+      "7759",
+      "7641",
+      "7753",
+      "7645",
+      "7907",
+      "7658",
+      "7894",
+      "7803",
+      "7865",
+      "7880"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 45,
+        "vector": 446,
+        "fuseRerank": 1,
+        "total": 521
+      }
+    }
+  },
+  {
+    "id": "q-00045",
+    "query": "腕部操作训练1对器械操控提出了什么关键要求？",
+    "gold": [
+      {
+        "chunk_id": "7622",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7623",
+      "7622",
+      "7648",
+      "7653",
+      "7619",
+      "7639",
+      "7638",
+      "7679",
+      "7747",
+      "7658",
+      "7817",
+      "7657",
+      "7637",
+      "7938",
+      "7058",
+      "7823",
+      "7678",
+      "7677",
+      "7745",
+      "7825"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 46,
+        "vector": 877,
+        "fuseRerank": 0,
+        "total": 951
+      }
+    }
+  },
+  {
+    "id": "q-00046",
+    "query": "Emulator API 中离合脚踏（Clutch）对应的变量名是什么？",
+    "gold": [
+      {
+        "chunk_id": "7026",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7026",
+      "7041",
+      "7024",
+      "7020",
+      "7023",
+      "7052",
+      "7054",
+      "7051",
+      "7039",
+      "7053",
+      "7047",
+      "7031",
+      "7663",
+      "7983",
+      "7643",
+      "7969",
+      "7963",
+      "7976",
+      "7960",
+      "7807"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 37,
+        "vector": 628,
+        "fuseRerank": 1,
+        "total": 695
+      }
+    }
+  },
+  {
+    "id": "q-00047",
+    "query": "API 里左电切（Left Cut）信号对应的变量名是什么？",
+    "gold": [
+      {
+        "chunk_id": "7027",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7027",
+      "7028",
+      "7029",
+      "7030",
+      "7026",
+      "7039",
+      "7053",
+      "7054",
+      "7042",
+      "7031",
+      "7024",
+      "7587",
+      "7589",
+      "7983",
+      "7960",
+      "7963",
+      "7962",
+      "7626",
+      "7666",
+      "7754"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 41,
+        "vector": 303,
+        "fuseRerank": 0,
+        "total": 373
+      }
+    }
+  },
+  {
+    "id": "q-00048",
+    "query": "EAP 软件当前受控版本是什么？",
+    "gold": [
+      {
+        "chunk_id": "6980",
+        "relevance": 3
+      },
+      {
+        "chunk_id": "6988",
+        "relevance": 2
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6980",
+      "6988",
+      "6993",
+      "6992",
+      "7010",
+      "7075",
+      "6949",
+      "6951",
+      "7007",
+      "7009",
+      "7005",
+      "6986",
+      "6981",
+      "6989",
+      "6991",
+      "6979",
+      "6987",
+      "6985",
+      "6984",
+      "6982"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 37,
+        "vector": 427,
+        "fuseRerank": 0,
+        "total": 490
+      }
+    }
+  },
+  {
+    "id": "q-00049",
+    "query": "模拟器仿真软件 mentorlearn 的当前受控版本是什么？",
+    "gold": [
+      {
+        "chunk_id": "6979",
+        "relevance": 3
+      },
+      {
+        "chunk_id": "6987",
+        "relevance": 2
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "6987",
+      "6979",
+      "6993",
+      "6992",
+      "7007",
+      "7009",
+      "7005",
+      "6982",
+      "6997",
+      "7010",
+      "6952",
+      "7600",
+      "6991",
+      "6989",
+      "6985",
+      "6984",
+      "6986",
+      "6981",
+      "6980",
+      "6988"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 33,
+        "vector": 375,
+        "fuseRerank": 1,
+        "total": 449
+      }
+    }
+  },
+  {
+    "id": "q-00050",
+    "query": "兼容性说明中为什么强调模拟器背包与医生台车的光端机型号和适配器必须一致？",
+    "gold": [
+      {
+        "chunk_id": "7010",
+        "relevance": 3
+      }
+    ],
+    "meta": {
+      "locale": "zh-CN"
+    },
+    "ranked_chunk_ids": [
+      "7016",
+      "7006",
+      "7010",
+      "6950",
+      "7008",
+      "6953",
+      "6949",
+      "7004",
+      "7013",
+      "6991",
+      "6961",
+      "6948",
+      "7589",
+      "7591",
+      "6951",
+      "7596",
+      "7587",
+      "7009",
+      "7007",
+      "7588"
+    ],
+    "retrieval_meta": {
+      "rank_source": "reranked",
+      "esTopK": 20,
+      "vecTopK": 20,
+      "fuseTopK": 20,
+      "collectionId": 2,
+      "timingMs": {
+        "es": 95,
+        "vector": 370,
+        "fuseRerank": 1,
+        "total": 494
+      }
+    }
+  }
+]

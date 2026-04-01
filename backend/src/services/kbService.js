@@ -15,7 +15,7 @@ const {
   getObjectBufferByUri
 } = require('./objectStorageService');
 const { DEFAULT_RETRIEVAL_TOP_K } = require('../config/retrievalConstants');
-const { createHybridRetrievalService } = require('./retrievalService');
+const { createHybridRetrievalService, toRetrievalSearchResponse } = require('./retrievalService');
 const { createEsLexicalProvider } = require('./lexicalProvider/esLexicalProvider');
 const { createQdrantVectorProvider } = require('./vectorProvider/qdrantProvider');
 const { createEmbeddingService } = require('./embeddingService');
@@ -67,12 +67,6 @@ function sha256(value) {
   return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
 }
 
-function tokenizeText(value = '') {
-  const raw = String(value || '').toLowerCase();
-  const terms = raw.match(/[\p{L}\p{N}_-]+/gu) || [];
-  return terms.filter(Boolean);
-}
-
 function safeJsonString(value) {
   try {
     return JSON.stringify(value || {});
@@ -84,6 +78,48 @@ function safeJsonString(value) {
 function logKbVector(level, event, payload = {}) {
   const method = typeof console[level] === 'function' ? level : 'log';
   console[method](`[KB向量] ${event} ${safeJsonString(payload)}`);
+}
+
+/** Provider APIs often cap single embedding input (e.g. DashScope "[1, 8192]"). */
+const DEFAULT_EMBEDDING_INPUT_CHAR_LIMIT = 8192;
+
+function getEmbeddingInputCharLimit() {
+  const n = Number(process.env.EMBEDDING_MAX_INPUT_CHARS || DEFAULT_EMBEDDING_INPUT_CHAR_LIMIT);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_EMBEDDING_INPUT_CHAR_LIMIT;
+}
+
+/**
+ * Logs per-chunk sizes for the exact strings sent to embedDocuments (buildVectorChunkContent).
+ * Use `reason: embed_failed` after a 400 to see which chunkId likely exceeded the provider limit.
+ */
+function logKbEmbeddingInputDiagnostics(file, vectorCandidates, vectorInputs, extra = {}) {
+  const limit = getEmbeddingInputCharLimit();
+  const rows = vectorCandidates.map(({ chunk }, index) => {
+    const text = String(vectorInputs[index] ?? '');
+    const codePointLen = [...text].length;
+    return {
+      chunkId: chunk.id,
+      chunkNo: chunk.chunkNo,
+      codePointLen,
+      utf8Bytes: Buffer.byteLength(text, 'utf8'),
+      tokenCount: chunk.tokenCount,
+      chunkType: String(chunk.metaJson?.chunkType || ''),
+      overCodePointLimit: codePointLen > limit,
+      overUtf8Limit: Buffer.byteLength(text, 'utf8') > limit
+    };
+  });
+  const byLen = [...rows].sort((a, b) => b.codePointLen - a.codePointLen);
+  const over = rows.filter((r) => r.overCodePointLimit || r.overUtf8Limit);
+  logKbVector('warn', 'embedding_input_sizes', {
+    fileId: file?.id,
+    fileName: file?.fileName,
+    limit,
+    ...extra,
+    totalChunks: rows.length,
+    overLimitCount: over.length,
+    longest: byLen.slice(0, 20),
+    ...(over.length ? { overLimit: over } : {})
+  });
 }
 
 function getOperatorId(user) {
@@ -258,11 +294,21 @@ function splitPlainTextToChunks(text, maxChunkSize = 800) {
 
   if (!paragraphs.length) return [];
 
+  const expanded = [];
+  paragraphs.forEach((part) => {
+    if (part.length <= maxChunkSize) {
+      expanded.push(part);
+      return;
+    }
+    splitLongParagraph(part, maxChunkSize).forEach((piece) => expanded.push(piece));
+  });
+  if (!expanded.length) return [];
+
   const chunks = [];
   let buffer = '';
   let start = 0;
 
-  paragraphs.forEach((part) => {
+  expanded.forEach((part) => {
     if (!buffer) {
       buffer = part;
       return;
@@ -897,75 +943,7 @@ async function recallFromEs({ collectionId, query, topK = DEFAULT_RETRIEVAL_TOP_
   return { skipped: false, hits };
 }
 
-function fuseAndRerankHits({ query, esHits = [], vecHits = [], topK = DEFAULT_RETRIEVAL_TOP_K, rrfK = 60 }) {
-  const map = new Map();
-  const push = (hit, lane) => {
-    const keyBase = hit.chunkId || `${hit.fileId}:${sha256(hit.content).slice(0, 12)}`;
-    const key = String(keyBase);
-    if (!map.has(key)) {
-      map.set(key, {
-        key,
-        chunkId: hit.chunkId,
-        chunkNo: hit.chunkNo || 0,
-        fileId: hit.fileId,
-        fileName: hit.fileName,
-        headingPath: hit.headingPath || [],
-        chunkType: hit.chunkType || 'paragraph',
-        rowKvText: hit.rowKvText || '',
-        sheetName: hit.sheetName || '',
-        tableId: hit.tableId || '',
-        rowIndex: Number(hit.rowIndex || 0),
-        content: hit.content || '',
-        esRank: null,
-        vecRank: null,
-        esScore: 0,
-        vecScore: 0
-      });
-    }
-    const item = map.get(key);
-    if (lane === 'es') {
-      item.esRank = hit.rank;
-      item.esScore = hit.score;
-    } else {
-      item.vecRank = hit.rank;
-      item.vecScore = hit.score;
-    }
-  };
-  esHits.forEach((hit) => push(hit, 'es'));
-  vecHits.forEach((hit) => push(hit, 'vector'));
-
-  const queryTokens = tokenizeText(query);
-  const merged = Array.from(map.values()).map((item) => {
-    const rrfScore =
-      (item.esRank ? 1 / (rrfK + item.esRank) : 0) +
-      (item.vecRank ? 1 / (rrfK + item.vecRank) : 0);
-    const haystack = `${item.fileName || ''} ${Array.isArray(item.headingPath) ? item.headingPath.join(' ') : ''} ${item.content || ''}`.toLowerCase();
-    const overlapCount = queryTokens.filter((token) => haystack.includes(token)).length;
-    const overlapScore = queryTokens.length ? overlapCount / queryTokens.length : 0;
-    const titleHitScore = queryTokens.some((token) => String(item.fileName || '').toLowerCase().includes(token))
-      ? 1
-      : 0;
-    const rerankScore = 0.7 * rrfScore + 0.2 * overlapScore + 0.1 * titleHitScore;
-    return {
-      ...item,
-      rrfScore,
-      overlapScore,
-      titleHitScore,
-      rerankScore
-    };
-  });
-
-  merged.sort((a, b) => b.rrfScore - a.rrfScore);
-  const fused = merged.slice(0, Math.max(1, Math.min(100, Number(topK) || DEFAULT_RETRIEVAL_TOP_K)));
-
-  const reranked = [...fused].sort((a, b) => b.rerankScore - a.rerankScore);
-  return {
-    fused,
-    reranked
-  };
-}
-
-async function retrievalDebug({ collectionId, query, esTopK = DEFAULT_RETRIEVAL_TOP_K, vecTopK = DEFAULT_RETRIEVAL_TOP_K, fuseTopK = DEFAULT_RETRIEVAL_TOP_K }) {
+async function retrievalDebug({ collectionId, query, keywords = [], esTopK = DEFAULT_RETRIEVAL_TOP_K, vecTopK = DEFAULT_RETRIEVAL_TOP_K, fuseTopK = DEFAULT_RETRIEVAL_TOP_K }) {
   const lexicalProvider = createEsLexicalProvider({
     axiosInstance: axios,
     buildEsConfig,
@@ -980,10 +958,23 @@ async function retrievalDebug({ collectionId, query, esTopK = DEFAULT_RETRIEVAL_
   return retrievalService.retrievalDebug({
     collectionId,
     query,
+    keywords,
     esTopK,
     vecTopK,
     fuseTopK
   });
+}
+
+async function retrievalSearch({ collectionId, query, keywords = [], esTopK = 5, vecTopK = 5, fuseTopK = 5 }) {
+  const debugResult = await retrievalDebug({
+    collectionId,
+    query,
+    keywords,
+    esTopK,
+    vecTopK,
+    fuseTopK
+  });
+  return toRetrievalSearchResponse(debugResult, { limit: fuseTopK });
 }
 
 async function deleteEsDocsByQuery({ collectionId = null, fileId = null } = {}) {
@@ -2293,20 +2284,20 @@ async function submitIngestTask({
   const versionNo = Number.isFinite(latestVersion) ? latestVersion + 1 : 1;
   let lineageRecord = null;
   const file = await KbFile.create({
-      collectionId,
-      fileName: fileName.trim(),
-      fileExt: normalizedExt,
-      mimeType: mimeType || null,
-      fileSize: Number(fileSize || 0),
-      storageUri: storageUri || `kb://${collectionId}/${Date.now()}-${fileName}`,
-      contentSha256: contentHash,
-      ragflowDocumentId: null,
-      uploadMode,
-      versionNo,
-      status: 'uploaded',
-      createdBy: operatorId,
-      updatedBy: operatorId
-    });
+    collectionId,
+    fileName: fileName.trim(),
+    fileExt: normalizedExt,
+    mimeType: mimeType || null,
+    fileSize: Number(fileSize || 0),
+    storageUri: storageUri || `kb://${collectionId}/${Date.now()}-${fileName}`,
+    contentSha256: contentHash,
+    ragflowDocumentId: null,
+    uploadMode,
+    versionNo,
+    status: 'uploaded',
+    createdBy: operatorId,
+    updatedBy: operatorId
+  });
 
   if (existing && uploadMode === 'force_version') {
     lineageRecord = await KbFileLineage.create({
@@ -2734,7 +2725,9 @@ async function runIngestPipeline({
                   : (fileExt === 'xlsx'
                     ? 'xlsx_sheet_v1'
                     : (fileExt === 'pdf' && parsedPdf && Array.isArray(parsedPdf.blocks) && parsedPdf.blocks.length
-                      ? 'pdf_struct_v1'
+                      ? (String(parsedPdf.parserKind || '').trim() === 'pdf_layout_v1'
+                        ? 'pdf_layout_v1'
+                        : 'pdf_struct_v1')
                       : (fileExt === 'pdf' ? 'pdf_text_v1' : 'plain_text')))),
             cleaner: fileExt,
             version:
@@ -2742,7 +2735,9 @@ async function runIngestPipeline({
                 ? 5
                 : (fileExt === 'xlsx'
                   ? 1
-                  : (fileExt === 'pdf' && parsedPdf && Array.isArray(parsedPdf.blocks) && parsedPdf.blocks.length ? 2 : (fileExt === 'pdf' ? 1 : 3))),
+                  : (fileExt === 'pdf' && parsedPdf && Array.isArray(parsedPdf.blocks) && parsedPdf.blocks.length
+                    ? (String(parsedPdf.parserKind || '').trim() === 'pdf_layout_v1' ? 4 : 2)
+                    : (fileExt === 'pdf' ? 1 : 3))),
             chunkType: item.chunkType || 'paragraph',
             headingPath: item.headingPath || [],
             assetKeys: item.assetKeys || [],
@@ -2902,7 +2897,30 @@ async function runIngestPipeline({
     const vectorInputs = vectorCandidates.map(({ chunk }) => buildVectorChunkContent(chunk));
     let vectors = [];
     if (!vectorBootstrapError && vectorInputs.length) {
-      vectors = await embeddingService.embedDocuments(vectorInputs);
+      const limit = getEmbeddingInputCharLimit();
+      const suspicious = vectorInputs.some((text) => {
+        const t = String(text || '');
+        return [...t].length > limit || Buffer.byteLength(t, 'utf8') > limit;
+      });
+      if (suspicious) {
+        logKbEmbeddingInputDiagnostics(file, vectorCandidates, vectorInputs, { reason: 'preflight_over_limit' });
+      }
+      try {
+        vectors = await embeddingService.embedDocuments(vectorInputs);
+      } catch (embedErr) {
+        const msg = String(embedErr?.message || embedErr || '');
+        if (
+          msg.includes('8192')
+          || msg.includes('embedding_request_failed:400')
+          || msg.includes('InvalidParameter')
+        ) {
+          logKbEmbeddingInputDiagnostics(file, vectorCandidates, vectorInputs, {
+            reason: 'embed_request_failed',
+            error: msg.slice(0, 800)
+          });
+        }
+        throw embedErr;
+      }
       if (vectors.length !== vectorInputs.length) {
         throw new Error(`embedding_result_count_mismatch:${vectors.length}:${vectorInputs.length}`);
       }
@@ -3163,6 +3181,7 @@ module.exports = {
   rollbackFailedIngestCreation,
   getJobStatus,
   retrievalDebug,
+  retrievalSearch,
   runIngestPipeline,
   runWithBackoffRetry,
   splitStructuredBlocksToChunks,

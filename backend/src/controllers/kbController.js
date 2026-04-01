@@ -17,6 +17,7 @@ const {
   submitIngestTask,
   getJobStatus,
   retrievalDebug,
+  retrievalSearch,
   normalizeFileExt,
   validateCollectionTags,
   listStandardTags,
@@ -24,7 +25,14 @@ const {
   approveTagAlias,
   rejectTagAlias
 } = require('../services/kbService');
-const { DEFAULT_RETRIEVAL_TOP_K } = require('../config/retrievalConstants');
+const { DEFAULT_RETRIEVAL_TOP_K, DEFAULT_RETRIEVAL_SEARCH_TOP_K } = require('../config/retrievalConstants');
+const { toRetrievalSearchResponse } = require('../services/retrievalService');
+const {
+  validateForGenerate,
+  generateFromReranked
+} = require('../services/retrievalTestChatService');
+
+const RETRIEVAL_TEST_GENERATE_TOP_K = 5;
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -462,25 +470,170 @@ async function createIngestTask(req, res, next) {
 
 async function retrievalDebugItem(req, res, next) {
   try {
+    const body = req.body || {};
     const {
       collectionId,
       query = '',
+      keywords = [],
       esTopK = DEFAULT_RETRIEVAL_TOP_K,
       vecTopK = DEFAULT_RETRIEVAL_TOP_K,
       fuseTopK = DEFAULT_RETRIEVAL_TOP_K
-    } = req.body || {};
+    } = body;
+    const generate = Boolean(body.generate);
+
     if (!collectionId) {
       return res.status(400).json({ messageKey: 'kb.collectionIdRequired', message: req.t('kb.collectionIdRequired') });
     }
     if (!String(query || '').trim()) {
       return res.status(400).json({ messageKey: 'kb.queryRequired', message: req.t('kb.queryRequired') });
     }
+
+    let es = Number(esTopK) || DEFAULT_RETRIEVAL_TOP_K;
+    let vec = Number(vecTopK) || DEFAULT_RETRIEVAL_TOP_K;
+    let fuse = Number(fuseTopK) || DEFAULT_RETRIEVAL_TOP_K;
+    let chatConfig = null;
+
+    if (generate) {
+      const cfg = validateForGenerate();
+      if (!cfg.ok) {
+        return res.status(400).json({
+          messageKey: cfg.messageKey,
+          message: req.t(cfg.messageKey)
+        });
+      }
+      chatConfig = cfg.config;
+      es = RETRIEVAL_TEST_GENERATE_TOP_K;
+      vec = RETRIEVAL_TEST_GENERATE_TOP_K;
+      fuse = RETRIEVAL_TEST_GENERATE_TOP_K;
+    }
+
     const result = await retrievalDebug({
       collectionId: Number(collectionId),
       query: String(query || ''),
-      esTopK: Number(esTopK) || DEFAULT_RETRIEVAL_TOP_K,
-      vecTopK: Number(vecTopK) || DEFAULT_RETRIEVAL_TOP_K,
-      fuseTopK: Number(fuseTopK) || DEFAULT_RETRIEVAL_TOP_K
+      keywords: normalizeKeywordsInput(keywords),
+      esTopK: es,
+      vecTopK: vec,
+      fuseTopK: fuse
+    });
+
+    if (generate && chatConfig) {
+      const gen = await generateFromReranked({
+        query: String(query || ''),
+        reranked: result.reranked,
+        config: chatConfig
+      });
+      if (!gen.ok) {
+        result.generation = {
+          error: true,
+          messageKey: gen.messageKey,
+          message: req.t(gen.messageKey),
+          ...(gen.upstreamStatus != null ? { upstreamStatus: gen.upstreamStatus } : {}),
+          ...(gen.detail ? { detail: gen.detail } : {})
+        };
+      } else {
+        result.generation = {
+          answer: gen.answer,
+          model: gen.model,
+          timingMs: gen.timingMs,
+          ...(gen.usage ? { usage: gen.usage } : {})
+        };
+      }
+    }
+
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+function clampRetrievalSearchTopK(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_RETRIEVAL_SEARCH_TOP_K;
+  return Math.min(5, Math.max(1, Math.floor(parsed)));
+}
+
+function normalizeKeywordsInput(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  return [];
+}
+
+async function retrievalSearchItem(req, res, next) {
+  try {
+    const body = req.body || {};
+    const {
+      collectionId,
+      query = '',
+      keywords = [],
+      esTopK = DEFAULT_RETRIEVAL_SEARCH_TOP_K,
+      vecTopK = DEFAULT_RETRIEVAL_SEARCH_TOP_K,
+      fuseTopK = DEFAULT_RETRIEVAL_SEARCH_TOP_K
+    } = body;
+    const generate = Boolean(body.generate);
+
+    if (!collectionId) {
+      return res.status(400).json({ messageKey: 'kb.collectionIdRequired', message: req.t('kb.collectionIdRequired') });
+    }
+    if (!String(query || '').trim()) {
+      return res.status(400).json({ messageKey: 'kb.queryRequired', message: req.t('kb.queryRequired') });
+    }
+
+    if (generate) {
+      const cfg = validateForGenerate();
+      if (!cfg.ok) {
+        return res.status(400).json({
+          messageKey: cfg.messageKey,
+          message: req.t(cfg.messageKey)
+        });
+      }
+      const chatConfig = cfg.config;
+      const k = RETRIEVAL_TEST_GENERATE_TOP_K;
+      const debugResult = await retrievalDebug({
+        collectionId: Number(collectionId),
+        query: String(query || ''),
+        keywords: normalizeKeywordsInput(keywords),
+        esTopK: k,
+        vecTopK: k,
+        fuseTopK: k
+      });
+      const result = toRetrievalSearchResponse(debugResult, { limit: k });
+      const gen = await generateFromReranked({
+        query: String(query || ''),
+        reranked: debugResult.reranked,
+        config: chatConfig
+      });
+      if (!gen.ok) {
+        result.generation = {
+          error: true,
+          messageKey: gen.messageKey,
+          message: req.t(gen.messageKey),
+          ...(gen.upstreamStatus != null ? { upstreamStatus: gen.upstreamStatus } : {}),
+          ...(gen.detail ? { detail: gen.detail } : {})
+        };
+      } else {
+        result.generation = {
+          answer: gen.answer,
+          model: gen.model,
+          timingMs: gen.timingMs,
+          ...(gen.usage ? { usage: gen.usage } : {})
+        };
+      }
+      return res.json(result);
+    }
+
+    const safeTopK = clampRetrievalSearchTopK(fuseTopK);
+    const result = await retrievalSearch({
+      collectionId: Number(collectionId),
+      query: String(query || ''),
+      keywords: normalizeKeywordsInput(keywords),
+      esTopK: clampRetrievalSearchTopK(esTopK),
+      vecTopK: clampRetrievalSearchTopK(vecTopK),
+      fuseTopK: safeTopK
     });
     return res.json(result);
   } catch (error) {
@@ -861,6 +1014,7 @@ module.exports = {
   uploadCollectionFiles,
   createIngestTask,
   retrievalDebugItem,
+  retrievalSearchItem,
   getTaskStatus,
   renameFileItem,
   deleteFileItem,

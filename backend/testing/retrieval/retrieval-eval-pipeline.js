@@ -4,7 +4,7 @@
  * Same retrieval path as POST /api/kb/retrieval/debug (kbService.retrievalDebug).
  *
  * Usage:
- *   node scripts/retrieval-eval-pipeline.js --input scripts/eval-datasets/kb_chunk_testset_10.json \
+ *   node testing/retrieval/retrieval-eval-pipeline.js --input testing/retrieval/eval-datasets/kb_chunk_testset_10.json \
  *     --collection-id <id> [--k 10] [--out report.json] [--text-out report.txt] \
  *     [--out-ranked path.json]
  *
@@ -18,10 +18,10 @@ const path = require('path');
 
 const dotenv = require('dotenv');
 
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-const { DEFAULT_RETRIEVAL_TOP_K } = require('../src/config/retrievalConstants');
-const { retrievalDebug } = require('../src/services/kbService');
+const { DEFAULT_RETRIEVAL_TOP_K } = require('../../src/config/retrievalConstants');
+const { retrievalDebug } = require('../../src/services/kbService');
 const { loadDataset, buildEvalReport, DEFAULT_K, DEFAULT_BOOTSTRAP } = require('./retrieval-eval');
 
 function parseArgs(argv) {
@@ -66,7 +66,7 @@ function chunkIdsFromHits(hits) {
 async function main() {
   const args = parseArgs(process.argv);
   if (args.help || !args.input) {
-    console.error(`Usage: node scripts/retrieval-eval-pipeline.js --input <dataset.json> --collection-id <n> [options]
+    console.error(`Usage: node testing/retrieval/retrieval-eval-pipeline.js --input <dataset.json> --collection-id <n> [options]
 
   --out-ranked <path>   Write ranked JSON (default: <input>.ranked.json)
   --no-out-ranked       Do not write ranked JSON

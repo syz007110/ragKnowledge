@@ -4,10 +4,10 @@ const assert = require('node:assert/strict');
 const {
   validateDirectIngestRequest,
   cleanupStoredUpload
-} = require('../src/controllers/kbController');
+} = require('../../src/controllers/kbController');
 const {
   rollbackFailedIngestCreation
-} = require('../src/services/kbService');
+} = require('../../src/services/kbService');
 
 test('validateDirectIngestRequest rejects client-provided storageUri', () => {
   const result = validateDirectIngestRequest({

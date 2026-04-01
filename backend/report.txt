@@ -1,5 +1,5 @@
 Retrieval eval report
-  input: D:\code\project\medbot\MKnowledge\backend\scripts\eval-datasets\kb_chunk_testset_10.ranked.json
+  input: D:\code\project\medbot\MKnowledge\backend\testing\retrieval\eval-datasets\kb_chunk_testset_10.ranked.json
   examples: 10  K=10  bootstrap=1000
 
 recall@10:

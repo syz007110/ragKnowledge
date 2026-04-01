@@ -228,7 +228,7 @@ def main():
     parser.add_argument("--max-chunk-size", type=int, default=800, help="Chunk size threshold")
     parser.add_argument(
         "--report-dir",
-        default="scripts/kb-tests/results",
+        default="testing/kb-chunk/results",
         help="Directory for saved report json",
     )
     parser.add_argument(

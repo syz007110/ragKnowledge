@@ -40,10 +40,10 @@
       "fuseTopK": 20,
       "collectionId": 2,
       "timingMs": {
-        "es": 464,
-        "vector": 1323,
+        "es": 123,
+        "vector": 1299,
         "fuseRerank": 4,
-        "total": 2530
+        "total": 1898
       }
     }
   },
@@ -88,10 +88,10 @@
       "fuseTopK": 20,
       "collectionId": 2,
       "timingMs": {
-        "es": 54,
-        "vector": 452,
+        "es": 45,
+        "vector": 640,
         "fuseRerank": 0,
-        "total": 571
+        "total": 743
       }
     }
   },
@@ -140,10 +140,10 @@
       "fuseTopK": 20,
       "collectionId": 2,
       "timingMs": {
-        "es": 48,
-        "vector": 360,
+        "es": 40,
+        "vector": 804,
         "fuseRerank": 0,
-        "total": 475
+        "total": 908
       }
     }
   },
@@ -188,10 +188,10 @@
       "fuseTopK": 20,
       "collectionId": 2,
       "timingMs": {
-        "es": 47,
-        "vector": 342,
+        "es": 56,
+        "vector": 581,
         "fuseRerank": 0,
-        "total": 429
+        "total": 746
       }
     }
   },
@@ -236,10 +236,10 @@
       "fuseTopK": 20,
       "collectionId": 2,
       "timingMs": {
-        "es": 53,
-        "vector": 411,
-        "fuseRerank": 1,
-        "total": 533
+        "es": 72,
+        "vector": 1446,
+        "fuseRerank": 0,
+        "total": 1574
       }
     }
   },
@@ -288,10 +288,10 @@
       "fuseTopK": 20,
       "collectionId": 2,
       "timingMs": {
-        "es": 53,
-        "vector": 905,
+        "es": 35,
+        "vector": 422,
         "fuseRerank": 0,
-        "total": 989
+        "total": 487
       }
     }
   },
@@ -336,10 +336,10 @@
       "fuseTopK": 20,
       "collectionId": 2,
       "timingMs": {
-        "es": 49,
-        "vector": 360,
-        "fuseRerank": 1,
-        "total": 454
+        "es": 37,
+        "vector": 370,
+        "fuseRerank": 0,
+        "total": 435
       }
     }
   },
@@ -388,10 +388,10 @@
       "fuseTopK": 20,
       "collectionId": 2,
       "timingMs": {
-        "es": 48,
-        "vector": 422,
-        "fuseRerank": 1,
-        "total": 512
+        "es": 44,
+        "vector": 441,
+        "fuseRerank": 0,
+        "total": 515
       }
     }
   },
@@ -436,10 +436,10 @@
       "fuseTopK": 20,
       "collectionId": 2,
       "timingMs": {
-        "es": 44,
-        "vector": 390,
+        "es": 47,
+        "vector": 555,
         "fuseRerank": 0,
-        "total": 471
+        "total": 636
       }
     }
   },
@@ -484,10 +484,10 @@
       "fuseTopK": 20,
       "collectionId": 2,
       "timingMs": {
-        "es": 47,
-        "vector": 368,
-        "fuseRerank": 0,
-        "total": 457
+        "es": 48,
+        "vector": 775,
+        "fuseRerank": 1,
+        "total": 854
       }
     }
   }

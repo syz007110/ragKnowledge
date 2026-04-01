@@ -167,15 +167,21 @@
           <el-form-item :label="t('detail.askQuestion')">
             <el-input v-model="askDialog.query" type="textarea" :rows="3" :placeholder="t('detail.askPlaceholder')" />
           </el-form-item>
+          <el-form-item :label="t('detail.askGenerate')">
+            <div class="ask-generate-row">
+              <el-switch v-model="askDialog.generate" />
+              <span class="ask-generate-hint">{{ t('detail.askGenerateHint') }}</span>
+            </div>
+          </el-form-item>
           <div class="ask-config-row">
             <el-form-item :label="t('detail.askEsTopK')">
-              <el-input-number v-model="askDialog.esTopK" :min="1" :max="100" />
+              <el-input-number v-model="askDialog.esTopK" :min="1" :max="100" :disabled="askDialog.generate" />
             </el-form-item>
             <el-form-item :label="t('detail.askVecTopK')">
-              <el-input-number v-model="askDialog.vecTopK" :min="1" :max="100" />
+              <el-input-number v-model="askDialog.vecTopK" :min="1" :max="100" :disabled="askDialog.generate" />
             </el-form-item>
             <el-form-item :label="t('detail.askFuseTopK')">
-              <el-input-number v-model="askDialog.fuseTopK" :min="1" :max="100" />
+              <el-input-number v-model="askDialog.fuseTopK" :min="1" :max="100" :disabled="askDialog.generate" />
             </el-form-item>
           </div>
         </el-form>
@@ -186,6 +192,19 @@
             Vec {{ askDialog.result.timingMs?.vector || 0 }}ms |
             Fuse {{ askDialog.result.timingMs?.fuseRerank || 0 }}ms |
             Total {{ askDialog.result.timingMs?.total || 0 }}ms
+            <template v-if="askDialog.result.generation && !askDialog.result.generation.error">
+              | {{ t('detail.askGenerationChatMs', { ms: askDialog.result.generation.timingMs || 0 }) }}
+              <template v-if="askDialog.result.generation.usage">
+                |
+                {{
+                  t('detail.askGenerationTokensTiming', {
+                    prompt: askDialog.result.generation.usage.promptTokens,
+                    completion: askDialog.result.generation.usage.completionTokens,
+                    total: askDialog.result.generation.usage.totalTokens
+                  })
+                }}
+              </template>
+            </template>
           </div>
           <el-tabs>
             <el-tab-pane :label="t('detail.askTabReranked')">
@@ -205,6 +224,30 @@
                 </div>
                 <div class="hit-content">{{ item.content }}</div>
               </div>
+            </el-tab-pane>
+            <el-tab-pane v-if="askDialog.result.generation" :label="t('detail.askTabGenerate')">
+              <template v-if="askDialog.result.generation.error">
+                <el-alert type="warning" show-icon :closable="false" :title="t('detail.askGenerationErrorTitle')" />
+                <p class="gen-error-text">{{ askDialog.result.generation.message }}</p>
+                <p v-if="askDialog.result.generation.upstreamStatus != null" class="gen-error-meta">
+                  HTTP {{ askDialog.result.generation.upstreamStatus }}
+                </p>
+              </template>
+              <template v-else>
+                <div class="gen-meta">
+                  {{ t('detail.askGenerationModel') }}: {{ askDialog.result.generation.model || '-' }}
+                </div>
+                <div v-if="askDialog.result.generation.usage" class="gen-meta gen-usage">
+                  {{
+                    t('detail.askGenerationTokens', {
+                      prompt: askDialog.result.generation.usage.promptTokens,
+                      completion: askDialog.result.generation.usage.completionTokens,
+                      total: askDialog.result.generation.usage.totalTokens
+                    })
+                  }}
+                </div>
+                <div class="gen-answer">{{ askDialog.result.generation.answer }}</div>
+              </template>
             </el-tab-pane>
             <el-tab-pane :label="t('detail.askTabEs')">
               <div v-for="(item, index) in askDialog.result.retrieval?.esHits || []" :key="`${item.chunkId || index}-es-${index}`" class="hit-card">
@@ -439,10 +482,14 @@ const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
 const collectionMeta = ref({ name: null, description: null });
+const RETRIEVAL_TEST_GENERATE_TOP_K = 5;
+
 const askDialog = ref({
   visible: false,
   loading: false,
   query: '',
+  generate: false,
+  topKBeforeGenerate: null,
   esTopK: 20,
   vecTopK: 20,
   fuseTopK: 20,
@@ -1047,7 +1094,8 @@ async function submitAskDebug() {
       query,
       esTopK: askDialog.value.esTopK,
       vecTopK: askDialog.value.vecTopK,
-      fuseTopK: askDialog.value.fuseTopK
+      fuseTopK: askDialog.value.fuseTopK,
+      generate: Boolean(askDialog.value.generate)
     });
     askDialog.value.result = response.data || null;
   } catch (error) {
@@ -1057,6 +1105,30 @@ async function submitAskDebug() {
     askDialog.value.loading = false;
   }
 }
+
+watch(
+  () => askDialog.value.generate,
+  (on) => {
+    if (on) {
+      askDialog.value.topKBeforeGenerate = {
+        esTopK: askDialog.value.esTopK,
+        vecTopK: askDialog.value.vecTopK,
+        fuseTopK: askDialog.value.fuseTopK
+      };
+      askDialog.value.esTopK = RETRIEVAL_TEST_GENERATE_TOP_K;
+      askDialog.value.vecTopK = RETRIEVAL_TEST_GENERATE_TOP_K;
+      askDialog.value.fuseTopK = RETRIEVAL_TEST_GENERATE_TOP_K;
+    } else {
+      const b = askDialog.value.topKBeforeGenerate;
+      if (b) {
+        askDialog.value.esTopK = b.esTopK;
+        askDialog.value.vecTopK = b.vecTopK;
+        askDialog.value.fuseTopK = b.fuseTopK;
+      }
+      askDialog.value.topKBeforeGenerate = null;
+    }
+  }
+);
 
 function handlePageChange(nextPage) {
   page.value = Number(nextPage || 1);
@@ -1339,6 +1411,45 @@ watch(() => route.params.id, () => {
 .ask-config-row {
   display: flex;
   gap: 16px;
+}
+
+.ask-generate-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ask-generate-hint {
+  font-size: 12px;
+  color: #667085;
+  line-height: 1.4;
+}
+
+.gen-meta {
+  font-size: 12px;
+  color: #475467;
+  margin-bottom: 8px;
+}
+
+.gen-answer {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #101828;
+}
+
+.gen-error-text {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #475467;
+  line-height: 1.5;
+}
+
+.gen-error-meta {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #667085;
 }
 
 .ask-result {

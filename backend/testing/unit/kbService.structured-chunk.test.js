@@ -5,7 +5,7 @@ const {
   splitStructuredBlocksToChunks,
   buildVectorChunkContent,
   runWithBackoffRetry
-} = require('../src/services/kbService');
+} = require('../../src/services/kbService');
 
 test('splitStructuredBlocksToChunks keeps table rows as standalone chunks', () => {
   const chunks = splitStructuredBlocksToChunks([

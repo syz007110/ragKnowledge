@@ -7,13 +7,13 @@
  *   - ranked_chunk_ids: ordered list of chunk ids (system output, length >= K recommended)
  *
  * Usage:
- *   node scripts/retrieval-eval.js --input path/to/dataset.json [--out report.json] [--text-out report.txt] [--k 10] [--bootstrap 1000]
+ *   node testing/retrieval/retrieval-eval.js --input path/to/dataset.json [--out report.json] [--text-out report.txt] [--k 10] [--bootstrap 1000]
  *
  * Retrieve + eval in one step:
- *   node scripts/retrieval-eval-pipeline.js --input path/to/gold.json --collection-id <id> [--k 10]
+ *   node testing/retrieval/retrieval-eval-pipeline.js --input path/to/gold.json --collection-id <id> [--k 10]
  *
  * Or only fill ranked_chunk_ids:
- *   node scripts/run-retrieval-testset.js --input path/to/gold-only.json --collection-id <id> --out path/to/ranked.json
+ *   node testing/retrieval/run-retrieval-testset.js --input path/to/gold-only.json --collection-id <id> --out path/to/ranked.json
  */
 
 const fs = require('fs');
@@ -320,7 +320,7 @@ function buildEvalReport(items, k, bootstrapIterations, inputPath) {
 function main() {
   const args = parseArgs(process.argv);
   if (args.help || !args.input) {
-    console.error(`Usage: node scripts/retrieval-eval.js --input <dataset.json|jsonl> [--out report.json] [--text-out report.txt] [--k 10] [--bootstrap 1000]
+    console.error(`Usage: node testing/retrieval/retrieval-eval.js --input <dataset.json|jsonl> [--out report.json] [--text-out report.txt] [--k 10] [--bootstrap 1000]
 
 Dataset format:
   - JSON array of examples, or JSON object with "items" array, or JSONL (one JSON per line).
@@ -336,7 +336,7 @@ Notes:
   - CI95 uses bootstrap on the per-example values (mean).
 
 One-shot retrieve + eval:
-  node scripts/retrieval-eval-pipeline.js --input <gold.json> --collection-id <id> [--k 10]
+  node testing/retrieval/retrieval-eval-pipeline.js --input <gold.json> --collection-id <id> [--k 10]
 `);
     process.exit(args.help ? 0 : 1);
   }

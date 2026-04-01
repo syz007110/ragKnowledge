@@ -36,5 +36,11 @@
   "kb.recycle.purgeFailed": "Recycle purge failed",
   "kb.recycle.invalidPurgePayload": "Invalid recycle purge payload",
   "kb.onlyofficeDisabled": "OnlyOffice is not configured (check ONLYOFFICE_* environment variables)",
-  "kb.onlyofficeUnsupportedType": "This file type is not supported for OnlyOffice"
+  "kb.onlyofficeUnsupportedType": "This file type is not supported for OnlyOffice",
+  "kb.retrievalTest.chatModelNotConfigured": "KB_RETRIEVAL_TEST_CHAT_MODEL is not set; retrieval test generation is unavailable",
+  "kb.retrievalTest.chatEmbeddingNotConfigured": "EMBEDDING_BASE_URL or EMBEDDING_API_KEY is missing; cannot call chat API",
+  "kb.retrievalTest.noCandidates": "No reranked hits; cannot generate an answer",
+  "kb.retrievalTest.chatUpstreamFailed": "Chat service request failed",
+  "kb.retrievalTest.chatEmptyAnswer": "Model returned empty content",
+  "kb.retrievalTest.chatTimeout": "Chat request timed out"
 }

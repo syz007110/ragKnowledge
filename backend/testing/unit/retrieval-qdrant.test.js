@@ -4,14 +4,14 @@ const assert = require('node:assert/strict');
 const {
   createHybridRetrievalService,
   fuseAndRerankHits
-} = require('../src/services/retrievalService');
+} = require('../../src/services/retrievalService');
 const {
   buildQdrantPoint,
   buildQdrantSearchFilter
-} = require('../src/services/qdrantService');
+} = require('../../src/services/qdrantService');
 const {
   countIndexedStates
-} = require('../src/services/indexStateService');
+} = require('../../src/services/indexStateService');
 
 test('createHybridRetrievalService combines lexical and vector providers with assets', async () => {
   const lexicalProvider = {

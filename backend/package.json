@@ -11,9 +11,10 @@
     "cluster:dev": "nodemon src/cluster/smartCluster.js",
     "worker": "node src/workers/queueProcessor.js",
     "worker:dev": "nodemon src/workers/queueProcessor.js",
-    "eval:retrieval": "node scripts/retrieval-eval.js",
-    "eval:retrieval:rank": "node scripts/run-retrieval-testset.js",
-    "eval:retrieval:pipeline": "node scripts/retrieval-eval-pipeline.js"
+    "test": "node --test testing/unit",
+    "eval:retrieval": "node testing/retrieval/retrieval-eval.js",
+    "eval:retrieval:rank": "node testing/retrieval/run-retrieval-testset.js",
+    "eval:retrieval:pipeline": "node testing/retrieval/retrieval-eval-pipeline.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.914.0",
@@ -22,6 +23,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "form-data": "^4.0.4",
     "jsonwebtoken": "^9.0.2",
     "mammoth": "^1.12.0",
     "multer": "^2.1.1",

@@ -6,6 +6,7 @@ const { runIngestPipeline, normalizeFileExt } = require('../services/kbService')
 const { KbFile, KbJob } = require('../models');
 const { publishKbTaskStatus } = require('../services/wsEventPublisher');
 const { isS3Uri, getObjectBufferByUri } = require('../services/objectStorageService');
+const { isLayoutEnabled, fetchPdfLayoutFromService } = require('../services/kbLayoutService');
 
 let mammoth = null;
 try {
@@ -576,6 +577,21 @@ async function extractRawText(payload) {
     if (ext === 'pdf') {
       if (!PDFParse) {
         throw new Error('kb.parser.pdfUnavailable');
+      }
+      if (isLayoutEnabled()) {
+        try {
+          const layout = await fetchPdfLayoutFromService(absPath);
+          if (layout && layout.pdf && Array.isArray(layout.pdf.blocks) && layout.pdf.blocks.length) {
+            return {
+              rawText: String(layout.rawText || '').trim(),
+              docx: null,
+              xlsx: null,
+              pdf: layout.pdf
+            };
+          }
+        } catch (error) {
+          console.warn('[KB] layout service failed, falling back to pdfjs:', error.message);
+        }
       }
       const fileBuffer = await fs.readFile(absPath);
       const parser = new PDFParse({ data: fileBuffer });

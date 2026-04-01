@@ -5,14 +5,14 @@
  * (same as POST /api/kb/retrieval/debug in kbController.retrievalDebugItem).
  *
  * Usage:
- *   node scripts/run-retrieval-testset.js --input scripts/eval-datasets/kb_chunk_testset_10.json \
- *     --collection-id <id> --out scripts/eval-datasets/kb_chunk_testset_10.ranked.json
+ *   node testing/retrieval/run-retrieval-testset.js --input testing/retrieval/eval-datasets/kb_chunk_testset_10.json \
+ *     --collection-id <id> --out testing/retrieval/eval-datasets/kb_chunk_testset_10.ranked.json
  *
  * Or use one-shot pipeline (retrieve + metrics + failed ids):
- *   node scripts/retrieval-eval-pipeline.js --input <same> --collection-id <id> --k 10
+ *   node testing/retrieval/retrieval-eval-pipeline.js --input <same> --collection-id <id> --k 10
  *
  * Then (rank-only workflow):
- *   node scripts/retrieval-eval.js --input scripts/eval-datasets/kb_chunk_testset_10.ranked.json --k 10
+ *   node testing/retrieval/retrieval-eval.js --input testing/retrieval/eval-datasets/kb_chunk_testset_10.ranked.json --k 10
  *
  * Defaults match kbController / retrievalConstants (esTopK, vecTopK, fuseTopK). If retrieval-eval uses --k 10,
  * pass e.g. --fuse-top-k 10 --es-top-k 10 --vec-top-k 10 so the ranked list is long enough.
@@ -25,10 +25,10 @@ const path = require('path');
 
 const dotenv = require('dotenv');
 
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-const { DEFAULT_RETRIEVAL_TOP_K } = require('../src/config/retrievalConstants');
-const { retrievalDebug } = require('../src/services/kbService');
+const { DEFAULT_RETRIEVAL_TOP_K } = require('../../src/config/retrievalConstants');
+const { retrievalDebug } = require('../../src/services/kbService');
 
 function parseArgs(argv) {
   const out = {
@@ -87,7 +87,7 @@ function chunkIdsFromHits(hits) {
 async function main() {
   const args = parseArgs(process.argv);
   if (args.help || !args.input) {
-    console.error(`Usage: node scripts/run-retrieval-testset.js --input <dataset.json> --collection-id <n> [--out <path>]
+    console.error(`Usage: node testing/retrieval/run-retrieval-testset.js --input <dataset.json> --collection-id <n> [--out <path>]
 
   --out            Output JSON (default: <input>.ranked.json next to input)
   --es-top-k       Default from retrievalConstants (same as API)
@@ -168,7 +168,7 @@ async function main() {
 
   fs.writeFileSync(outPath, JSON.stringify(output, null, 2), 'utf8');
   console.error(`Wrote ${output.length} examples → ${outPath}`);
-  console.error(`Run: node scripts/retrieval-eval.js --input ${path.relative(process.cwd(), outPath)} --k <K<=fuseTopK>`);
+  console.error(`Run: node testing/retrieval/retrieval-eval.js --input ${path.relative(process.cwd(), outPath)} --k <K<=fuseTopK>`);
 }
 
 main().catch((e) => {

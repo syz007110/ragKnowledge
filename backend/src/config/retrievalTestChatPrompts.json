@@ -1,0 +1,15 @@
+{
+  "retrievalTestGenerate": {
+    "temperature": 0.2,
+    "system": [
+      "你是知识库助手。只根据用户提供的片段作答，不要使用片段外的推测；回答简洁准确。"
+    ],
+    "userPreamble": [
+      "用户问题：{{query}}",
+      "",
+      "请仅根据下列知识片段回答问题；若片段不足以回答，请明确说明。",
+      ""
+    ],
+    "chunkHeaderTemplate": "[片段{{index}}] 文件：{{fileName}} | 标题路径：{{headingPath}}"
+  }
+}
