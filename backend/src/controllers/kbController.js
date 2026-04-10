@@ -15,6 +15,7 @@ const {
   getFilePreviewData,
   getFileAssetBuffer,
   submitIngestTask,
+  preparePresignedKbUpload,
   getJobStatus,
   retrievalDebug,
   retrievalSearch,
@@ -40,10 +41,12 @@ const kbStorage = require('../config/kbStorage');
 const {
   buildStorageConfig,
   isS3Uri,
+  buildS3Uri,
   buildUploadObjectKey,
   uploadLocalFile,
   getObjectBufferByUri,
-  deleteObjectByUri
+  deleteObjectByUri,
+  headObjectMeta
 } = require('../services/objectStorageService');
 const { hasKbPermission } = require('../middlewares/auth');
 const {
@@ -385,6 +388,184 @@ async function getCollectionFiles(req, res, next) {
       sortOrder
     });
     return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function initPresignedUploadItem(req, res, next) {
+  try {
+    const collectionId = Number(req.params.id);
+    const {
+      fileName = '',
+      contentSha256 = '',
+      fileSize = 0,
+      mimeType = '',
+      uploadMode = 'normal'
+    } = req.body || {};
+
+    const normalizedFileName = normalizeUploadFileName(fileName);
+    if (!normalizedFileName) {
+      return res.status(400).json({ messageKey: 'kb.fileNameRequired', message: req.t('kb.fileNameRequired') });
+    }
+
+    const result = await preparePresignedKbUpload({
+      collectionId,
+      fileName: normalizedFileName,
+      contentSha256,
+      fileSize,
+      mimeType,
+      uploadMode
+    });
+
+    if (result.rejected) {
+      return res.status(400).json({
+        messageKey: result.reasonKey,
+        message: req.t(result.reasonKey)
+      });
+    }
+
+    if (result.dedupReused) {
+      return res.status(200).json({
+        messageKey: 'kb.dedupReused',
+        message: req.t('kb.dedupReused'),
+        dedupReused: true,
+        file: result.file
+      });
+    }
+
+    return res.status(200).json({
+      messageKey: 'common.success',
+      message: req.t('common.success'),
+      objectKey: result.objectKey,
+      storageUri: result.storageUri,
+      uploadUrl: result.uploadUrl,
+      method: result.method,
+      headers: result.headers,
+      expiresIn: result.expiresIn
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function completePresignedUploadItem(req, res, next) {
+  try {
+    const collectionId = Number(req.params.id);
+    const {
+      objectKey = '',
+      contentSha256 = '',
+      fileName = '',
+      fileSize = 0,
+      mimeType = '',
+      uploadMode = 'normal',
+      metadata = {}
+    } = req.body || {};
+
+    const key = String(objectKey || '').trim();
+    const expectedPrefix = `kb/${collectionId}/`;
+    if (!key.startsWith(expectedPrefix) || key.includes('..')) {
+      return res.status(400).json({
+        messageKey: 'kb.presignObjectKeyInvalid',
+        message: req.t('kb.presignObjectKeyInvalid')
+      });
+    }
+
+    const trimmedName = normalizeUploadFileName(fileName);
+    if (!trimmedName) {
+      return res.status(400).json({ messageKey: 'kb.fileNameRequired', message: req.t('kb.fileNameRequired') });
+    }
+
+    const hash = String(contentSha256 || '').trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(hash)) {
+      return res.status(400).json({
+        messageKey: 'kb.contentSha256Invalid',
+        message: req.t('kb.contentSha256Invalid')
+      });
+    }
+
+    const size = Number(fileSize);
+    if (!Number.isFinite(size) || size < 1) {
+      return res.status(400).json({ messageKey: 'kb.uploadLimitExceeded', message: req.t('kb.uploadLimitExceeded') });
+    }
+    if (size > kbStorage.MAX_FILE_SIZE) {
+      return res.status(400).json({ messageKey: 'kb.uploadLimitExceeded', message: req.t('kb.uploadLimitExceeded') });
+    }
+
+    const cfg = buildStorageConfig();
+    if (!cfg.enabled) {
+      return res.status(400).json({
+        messageKey: 'kb.presignRequiresObjectStorage',
+        message: req.t('kb.presignRequiresObjectStorage')
+      });
+    }
+
+    let headMeta;
+    try {
+      headMeta = await headObjectMeta(key);
+    } catch (error) {
+      if (error?.message === 'kb.presignObjectMissing' || error?.code === 'kb.presignObjectMissing') {
+        return res.status(400).json({
+          messageKey: 'kb.presignObjectMissing',
+          message: req.t('kb.presignObjectMissing')
+        });
+      }
+      throw error;
+    }
+
+    if (headMeta.contentLength !== size) {
+      return res.status(400).json({
+        messageKey: 'kb.presignSizeMismatch',
+        message: req.t('kb.presignSizeMismatch')
+      });
+    }
+
+    const ext = normalizeFileExt(trimmedName, '');
+    if (!['md', 'txt', 'docx', 'xlsx', 'pdf'].includes(ext)) {
+      return res.status(400).json({ messageKey: 'kb.fileExtUnsupported', message: req.t('kb.fileExtUnsupported') });
+    }
+
+    const storageUri = buildS3Uri(cfg.bucket, key);
+
+    const result = await submitIngestTask({
+      collectionId,
+      fileName: trimmedName,
+      fileExt: ext,
+      mimeType,
+      fileSize: size,
+      uploadMode,
+      storageUri,
+      contentSha256: hash,
+      rawText: '',
+      metadata,
+      user: req.user,
+      locale: req.locale
+    });
+
+    if (result.rejected) {
+      return res.status(400).json({
+        messageKey: result.reasonKey,
+        message: req.t(result.reasonKey)
+      });
+    }
+
+    if (result.dedupReused) {
+      await deleteObjectByUri(storageUri);
+      return res.status(200).json({
+        messageKey: 'kb.dedupReused',
+        message: req.t('kb.dedupReused'),
+        dedupReused: true,
+        file: result.file
+      });
+    }
+
+    return res.status(202).json({
+      messageKey: 'kb.ingestAccepted',
+      message: req.t('kb.ingestAccepted'),
+      file: result.file,
+      job: result.jobRecord,
+      queueJobId: result.queueJobId
+    });
   } catch (error) {
     return next(error);
   }
@@ -1012,6 +1193,8 @@ module.exports = {
   purgeRecycleBinItems,
   getCollectionFiles,
   uploadCollectionFiles,
+  initPresignedUploadItem,
+  completePresignedUploadItem,
   createIngestTask,
   retrievalDebugItem,
   retrievalSearchItem,

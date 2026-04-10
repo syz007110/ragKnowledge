@@ -17,10 +17,6 @@ module.exports = (sequelize) => sequelize.define('kbCollection', {
   description: {
     type: DataTypes.STRING(500)
   },
-  ragflowDatasetId: {
-    type: DataTypes.STRING(128),
-    field: 'ragflow_dataset_id'
-  },
   status: {
     type: DataTypes.TINYINT,
     allowNull: false,

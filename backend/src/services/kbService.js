@@ -10,9 +10,12 @@ const {
   isS3Uri,
   deleteObjectByUri,
   buildStorageConfig,
+  ensureStorageConfig,
   buildUploadObjectKey,
+  buildS3Uri,
   uploadBuffer,
-  getObjectBufferByUri
+  getObjectBufferByUri,
+  presignPutObjectUrl
 } = require('./objectStorageService');
 const { DEFAULT_RETRIEVAL_TOP_K } = require('../config/retrievalConstants');
 const { createHybridRetrievalService, toRetrievalSearchResponse } = require('./retrievalService');
@@ -2206,6 +2209,101 @@ async function getFileAssetBuffer({ fileId, assetId }) {
   };
 }
 
+function parsePresignExpiresSec() {
+  const raw = String(process.env.KB_PRESIGN_EXPIRES_SEC || '3600').trim();
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 60) return 3600;
+  const maxSec = 86400 * 7;
+  if (n > maxSec) return maxSec;
+  return Math.floor(n);
+}
+
+async function preparePresignedKbUpload({
+  collectionId,
+  fileName,
+  contentSha256,
+  fileSize,
+  mimeType,
+  uploadMode = 'normal'
+} = {}) {
+  const trimmedName = String(fileName || '').trim();
+  if (!trimmedName) {
+    return { rejected: true, reasonKey: 'kb.fileNameRequired' };
+  }
+
+  const normalizedExt = normalizeFileExt(trimmedName, '');
+  if (!SUPPORTED_EXTS.includes(normalizedExt)) {
+    return { rejected: true, reasonKey: 'kb.fileExtUnsupported' };
+  }
+
+  const size = Number(fileSize);
+  if (!Number.isFinite(size) || size < 1) {
+    return { rejected: true, reasonKey: 'kb.uploadLimitExceeded' };
+  }
+  if (size > kbStorage.MAX_FILE_SIZE) {
+    return { rejected: true, reasonKey: 'kb.uploadLimitExceeded' };
+  }
+
+  const hash = String(contentSha256 || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(hash)) {
+    return { rejected: true, reasonKey: 'kb.contentSha256Invalid' };
+  }
+
+  const storageCfg = buildStorageConfig();
+  if (!storageCfg.enabled) {
+    return { rejected: true, reasonKey: 'kb.presignRequiresObjectStorage' };
+  }
+  try {
+    ensureStorageConfig(storageCfg);
+  } catch (_) {
+    return { rejected: true, reasonKey: 'kb.objectStorageConfigMissing' };
+  }
+
+  const collection = await KbCollection.findOne({
+    where: { id: collectionId, isDeleted: 0 }
+  });
+  if (!collection) {
+    return { rejected: true, reasonKey: 'kb.collectionNotFound' };
+  }
+
+  const existing = await KbFile.findOne({
+    where: {
+      collectionId,
+      contentSha256: hash,
+      isDeleted: 0
+    },
+    order: [['id', 'DESC']]
+  });
+
+  if (existing && uploadMode !== 'force_version') {
+    return { dedupReused: true, file: existing };
+  }
+
+  const objectKey = buildUploadObjectKey({ collectionId, fileName: trimmedName });
+  let contentType = String(mimeType || '').trim();
+  if (!contentType) {
+    contentType = 'application/octet-stream';
+  }
+
+  const expiresSec = parsePresignExpiresSec();
+  const { uploadUrl, expiresIn } = await presignPutObjectUrl({
+    objectKey,
+    contentType,
+    expiresIn: expiresSec
+  });
+
+  return {
+    objectKey,
+    storageUri: buildS3Uri(storageCfg.bucket, objectKey),
+    uploadUrl,
+    method: 'PUT',
+    headers: {
+      'Content-Type': contentType
+    },
+    expiresIn: expiresIn ?? expiresSec
+  };
+}
+
 async function rollbackFailedIngestCreation({
   lineageRecord = null,
   jobRecord = null,
@@ -2291,7 +2389,6 @@ async function submitIngestTask({
     fileSize: Number(fileSize || 0),
     storageUri: storageUri || `kb://${collectionId}/${Date.now()}-${fileName}`,
     contentSha256: contentHash,
-    ragflowDocumentId: null,
     uploadMode,
     versionNo,
     status: 'uploaded',
@@ -2424,7 +2521,7 @@ async function upsertFileAssetsAndRelations({
         width: null,
         height: null,
         meta: {
-          parser: 'docx_mammoth',
+          parser: 'docx_python_docx',
           byteLength: Number(image.byteLength || 0)
         }
       }))
@@ -2721,7 +2818,7 @@ async function runIngestPipeline({
               fileExt === 'txt'
                 ? 'txt_v1'
                 : (fileExt === 'docx'
-                  ? 'docx_mammoth_v1'
+                  ? 'docx_python_docx_v1'
                   : (fileExt === 'xlsx'
                     ? 'xlsx_sheet_v1'
                     : (fileExt === 'pdf' && parsedPdf && Array.isArray(parsedPdf.blocks) && parsedPdf.blocks.length
@@ -2732,7 +2829,7 @@ async function runIngestPipeline({
             cleaner: fileExt,
             version:
               fileExt === 'docx'
-                ? 5
+                ? 6
                 : (fileExt === 'xlsx'
                   ? 1
                   : (fileExt === 'pdf' && parsedPdf && Array.isArray(parsedPdf.blocks) && parsedPdf.blocks.length
@@ -3178,6 +3275,7 @@ module.exports = {
   getFilePreviewData,
   getFileAssetBuffer,
   submitIngestTask,
+  preparePresignedKbUpload,
   rollbackFailedIngestCreation,
   getJobStatus,
   retrievalDebug,

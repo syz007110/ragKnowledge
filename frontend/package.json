@@ -8,6 +8,7 @@
     "build": "cross-env VUE_APP_TARGET=web vue-cli-service build"
   },
   "dependencies": {
+    "@noble/hashes": "^1.7.1",
     "@element-plus/icons-vue": "^2.1.0",
     "@icon-park/vue-next": "^1.4.2",
     "axios": "^1.4.0",

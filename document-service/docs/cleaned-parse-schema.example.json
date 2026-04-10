@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "1.0",
+  "upstream": {
+    "parseSchemaVersion": "2.0",
+    "parseRoute": "native",
+    "fileExt": "docx",
+    "parserKind": "docx_python_docx_v2",
+    "sourceFileName": "example.docx"
+  },
+  "meta": {
+    "pageCount": 1,
+    "sourceFileName": "example.docx",
+    "warnings": [],
+    "hasBbox": false,
+    "cleaning": {
+      "policy": "docx_body_v1",
+      "droppedSourceRegions": ["header", "footer"],
+      "droppedBlockRoles": ["toc"],
+      "removedAssetIds": ["ast-img-1"]
+    }
+  },
+  "assets": [
+    {
+      "id": "ast-img-2",
+      "kind": "image",
+      "mimeType": "image/png",
+      "storageUri": ""
+    }
+  ],
+  "pages": [],
+  "chunkView": {
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "摘要或引言（尚未进入任何标题下）。",
+        "headingPath": []
+      },
+      {
+        "type": "heading",
+        "level": 1,
+        "text": "第一章 示例标题",
+        "headingPath": ["第一章 示例标题"]
+      },
+      {
+        "type": "paragraph",
+        "text": "正文段落，页眉页脚与目录已从本视图中移除；页眉中的装饰图已随区域丢弃，其 id 可记入 meta.cleaning.removedAssetIds。",
+        "headingPath": ["第一章 示例标题"]
+      },
+      {
+        "type": "image",
+        "imageKey": "ast-img-2",
+        "headingPath": ["第一章 示例标题"]
+      },
+      {
+        "type": "paragraph",
+        "text": "紧随其后的段落；插图与上下文的章节归属见本块与上一 image 块的 headingPath。",
+        "headingPath": ["第一章 示例标题"]
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "text": "1.1 小节",
+        "headingPath": ["第一章 示例标题", "1.1 小节"]
+      },
+      {
+        "type": "paragraph",
+        "text": "小节正文，headingPath 比上一级多一层，表示「父标题链」而非树里嵌套父块 id。",
+        "headingPath": ["第一章 示例标题", "1.1 小节"]
+      }
+    ]
+  }
+}

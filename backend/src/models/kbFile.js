@@ -41,10 +41,6 @@ module.exports = (sequelize) => sequelize.define('kbFile', {
     allowNull: false,
     field: 'content_sha256'
   },
-  ragflowDocumentId: {
-    type: DataTypes.STRING(128),
-    field: 'ragflow_document_id'
-  },
   uploadMode: {
     type: DataTypes.STRING(32),
     allowNull: false,

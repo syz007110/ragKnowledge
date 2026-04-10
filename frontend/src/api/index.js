@@ -40,11 +40,24 @@ export default {
     getCollectionFiles(collectionId, params = {}) {
       return http.get(`/api/kb/collections/${collectionId}/files`, { params });
     },
+    /** @deprecated 保留兼容；新上传请用 presignInit + 直传 + presignComplete */
     uploadCollectionFiles(collectionId, formData, options = {}) {
       const timeoutMs = Number(options.timeoutMs || 0);
       return http.post(`/api/kb/collections/${collectionId}/files/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: options.onUploadProgress,
+        ...(Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeout: timeoutMs } : {})
+      });
+    },
+    presignInit(collectionId, payload, options = {}) {
+      const timeoutMs = Number(options.timeoutMs || 0);
+      return http.post(`/api/kb/collections/${collectionId}/files/presign-init`, payload, {
+        ...(Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeout: timeoutMs } : {})
+      });
+    },
+    presignComplete(collectionId, payload, options = {}) {
+      const timeoutMs = Number(options.timeoutMs || 0);
+      return http.post(`/api/kb/collections/${collectionId}/files/presign-complete`, payload, {
         ...(Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeout: timeoutMs } : {})
       });
     },

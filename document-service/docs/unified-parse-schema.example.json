@@ -1,0 +1,242 @@
+{
+  "parseDocument": {
+    "schemaVersion": "2.0",
+    "parseRoute": "native",
+    "fileExt": "docx",
+    "parserKind": "docx_python_docx_v2",
+    "meta": {
+      "pageCount": 1,
+      "sourceFileName": "用药说明.docx",
+      "warnings": [],
+      "hasBbox": false,
+      "readingOrderPolicy": "per_section: unique header parts then unique footer parts (dedup by part name), then document body (with textbox content after each paragraph), then footnotes part, then endnotes part"
+    },
+    "assets": [
+      {
+        "id": "ast-img-001",
+        "kind": "image",
+        "mimeType": "image/png",
+        "storageUri": ""
+      }
+    ],
+    "pages": [
+      {
+        "pageIndex": 0,
+        "blocks": [
+          {
+            "id": "blk-hdr-example",
+            "type": "paragraph",
+            "readingOrder": 0,
+            "sourceRegion": "header",
+            "lines": [
+              {
+                "id": "ln-hdr-0",
+                "spans": [
+                  {
+                    "id": "sp-hdr-0-0",
+                    "text": "示例医院 · 内部文件",
+                    "translatable": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "blk-title-1",
+            "type": "title",
+            "readingOrder": 1,
+            "level": 1,
+            "lines": [
+              {
+                "id": "ln-title-1-0",
+                "spans": [
+                  {
+                    "id": "sp-title-1-0-0",
+                    "text": "用药说明",
+                    "translatable": true,
+                    "style": [
+                      "bold"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "blk-p-1",
+            "type": "paragraph",
+            "readingOrder": 2,
+            "lines": [
+              {
+                "id": "ln-p-1-0",
+                "spans": [
+                  {
+                    "id": "sp-p-1-0-0",
+                    "text": "本品需饭后服用。",
+                    "translatable": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "blk-fig-1",
+            "type": "figure",
+            "readingOrder": 3,
+            "assetRef": "ast-img-001",
+            "blocks": [
+              {
+                "id": "blk-fig-1-cap",
+                "type": "paragraph",
+                "readingOrder": 0,
+                "lines": [
+                  {
+                    "id": "ln-cap-1-0",
+                    "spans": [
+                      {
+                        "id": "sp-cap-1-0-0",
+                        "text": "图 1 外包装",
+                        "translatable": true
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "blk-tbl-1",
+            "type": "table",
+            "readingOrder": 4,
+            "blocks": [
+              {
+                "id": "blk-tbl-1-cap",
+                "type": "paragraph",
+                "readingOrder": 0,
+                "lines": [
+                  {
+                    "id": "ln-tbl-cap-0",
+                    "spans": [
+                      {
+                        "id": "sp-tbl-cap-0-0",
+                        "text": "表 1 用法",
+                        "translatable": true
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "blk-tbl-1-body",
+                "type": "table",
+                "readingOrder": 1,
+                "rows": [
+                  {
+                    "id": "row-0",
+                    "cells": [
+                      {
+                        "id": "c-0-0",
+                        "spans": [
+                          {
+                            "id": "s-0-0",
+                            "text": "项目",
+                            "translatable": true
+                          }
+                        ]
+                      },
+                      {
+                        "id": "c-0-1",
+                        "spans": [
+                          {
+                            "id": "s-0-1",
+                            "text": "说明",
+                            "translatable": true
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "row-1",
+                    "cells": [
+                      {
+                        "id": "c-1-0",
+                        "spans": [
+                          {
+                            "id": "s-1-0",
+                            "text": "剂量",
+                            "translatable": true
+                          }
+                        ]
+                      },
+                      {
+                        "id": "c-1-1",
+                        "spans": [
+                          {
+                            "id": "s-1-1",
+                            "text": "一日两次",
+                            "translatable": true
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "chunkView": {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "示例医院 · 内部文件"
+        },
+        {
+          "type": "heading",
+          "level": 1,
+          "text": "用药说明"
+        },
+        {
+          "type": "paragraph",
+          "text": "本品需饭后服用。"
+        },
+        {
+          "type": "image",
+          "imageKey": "ast-img-001"
+        },
+        {
+          "type": "paragraph",
+          "text": "图 1 外包装"
+        },
+        {
+          "type": "table_summary",
+          "text": "表头: 项目 | 说明",
+          "sheetName": "",
+          "tableId": "blk-tbl-1",
+          "rowIndex": 0
+        },
+        {
+          "type": "table_row",
+          "text": "项目: 剂量; 说明: 一日两次",
+          "rowKvText": "项目: 剂量; 说明: 一日两次",
+          "sheetName": "",
+          "tableId": "blk-tbl-1",
+          "rowIndex": 1
+        }
+      ]
+    }
+  },
+  "embeddedImagePayloadsEncoding": "base64",
+  "embeddedImagePayloads": {
+    "ast-img-001": {
+      "id": "ast-img-001",
+      "contentType": "image/png",
+      "byteLength": 67,
+      "sha256": "432ce6b158b4292c72a0b9a3c2d8e1f4a7b0c3d6e9f2a5b8c1d4e7f0a3b6c9d2",
+      "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    }
+  }
+}

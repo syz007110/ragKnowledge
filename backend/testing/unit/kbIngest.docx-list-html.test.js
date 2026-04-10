@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 /**
- * Mirrors block extraction in kbIngestProcessor (docx path): headings, p, li, table.
+ * Regression helper: docx-style HTML list shape (Word/mammoth-like export patterns).
  */
 function extractDocxLikeBlocks(html) {
   const blocks = [];

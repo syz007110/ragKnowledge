@@ -35,20 +35,6 @@ app.use((error, req, res, next) => {
       message: req.t ? req.t('kb.fileExtUnsupported') : 'Unsupported file extension'
     });
   }
-  if (errorMessage.startsWith('kb.ragflow.datasetSyncFailed')) {
-    return res.status(502).json({
-      messageKey: 'kb.ragflow.datasetSyncFailed',
-      message: req.t ? req.t('kb.ragflow.datasetSyncFailed') : 'RagFlow dataset synchronization failed',
-      detail: process.env.NODE_ENV === 'production' ? undefined : errorMessage
-    });
-  }
-  if (errorMessage.startsWith('kb.ragflow.documentSyncFailed')) {
-    return res.status(502).json({
-      messageKey: 'kb.ragflow.documentSyncFailed',
-      message: req.t ? req.t('kb.ragflow.documentSyncFailed') : 'RagFlow document synchronization failed',
-      detail: process.env.NODE_ENV === 'production' ? undefined : errorMessage
-    });
-  }
   if (errorMessage.startsWith('kb.es.deleteSyncFailed')) {
     return res.status(502).json({
       messageKey: 'kb.es.deleteSyncFailed',

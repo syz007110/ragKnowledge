@@ -466,12 +466,17 @@ import {
   View
 } from '@element-plus/icons-vue';
 import { useI18n } from 'vue-i18n';
+import axios from 'axios';
 import KBTopNav from '../components/KBTopNav.vue';
 import PreviewChunkAssetImg from '../components/PreviewChunkAssetImg.vue';
 import { isAdmin as checkIsAdmin } from '../utils/auth';
 import api from '../api';
 import websocketClient from '../services/websocketClient';
 import { renderDocxPreview, renderXlsxPreview } from '../utils/kbOfficePreview';
+import { sha256HexFromBlob } from '../utils/fileSha256';
+
+/** 直传 MinIO/S3：不带 JWT，避免污染预签名请求 */
+const uploadToStorageAxios = axios.create();
 
 const route = useRoute();
 const isAdmin = computed(() => checkIsAdmin());
@@ -728,47 +733,91 @@ async function handleFileChange(event) {
     let reusedCount = 0;
     let failedCount = 0;
     await runWithConcurrency(uploadTasks, UPLOAD_CONCURRENCY, async ({ file, row }) => {
-      const formData = new FormData();
-      formData.append('files', file);
-      formData.append('uploadMode', 'normal');
+      const mimeType = (file.type && String(file.type).trim()) || 'application/octet-stream';
       try {
-        updateUploadItem(row.id, { stateText: '上传中', progressStatus: '' });
-        const response = await api.kb.uploadCollectionFiles(detail.value.id, formData, {
-          timeoutMs: UPLOAD_REQUEST_TIMEOUT_MS,
-          onUploadProgress: (progressEvent) => {
-            const total = Number(progressEvent?.total || file.size || 0);
-            const loaded = Number(progressEvent?.loaded || 0);
-            if (!total) return;
-            const percent = Math.max(0, Math.min(100, Math.round((loaded / total) * 100)));
-            updateUploadItem(row.id, { progress: percent, stateText: percent >= 100 ? '等待入队' : '上传中' });
-          }
-        });
-        const accepted = response?.data?.accepted || [];
-        const reused = response?.data?.reused || [];
-        const failed = response?.data?.failed || [];
-        if (accepted.length) {
-          acceptedCount += 1;
-          const acceptedItem = accepted.find((item) => String(item?.fileName || '') === String(file.name)) || accepted[0];
-          const taskId = Number(acceptedItem?.job?.id || 0);
-          if (taskId) activeTaskIds.add(taskId);
-          updateUploadItem(row.id, {
-            progress: 100,
-            progressStatus: '',
-            stateText: '等待处理',
-            taskId: taskId || null
-          });
-        } else if (reused.length) {
+        updateUploadItem(row.id, { progress: 2, progressStatus: '', stateText: t('detail.uploadHashing') });
+        const contentSha256 = await sha256HexFromBlob(file);
+
+        updateUploadItem(row.id, { progress: 5, stateText: t('detail.uploadPresign') });
+        const initRes = await api.kb.presignInit(
+          detail.value.id,
+          {
+            fileName: file.name,
+            contentSha256,
+            fileSize: file.size,
+            mimeType,
+            uploadMode: 'normal'
+          },
+          { timeoutMs: UPLOAD_REQUEST_TIMEOUT_MS }
+        );
+        const initData = initRes?.data || {};
+
+        if (initData.dedupReused) {
           reusedCount += 1;
           updateUploadItem(row.id, { progress: 100, progressStatus: 'success', stateText: '已复用' });
-        } else if (failed.length) {
-          failedCount += 1;
-          updateUploadItem(row.id, { progressStatus: 'exception', stateText: failed[0]?.reason || '上传失败' });
-        } else {
-          updateUploadItem(row.id, { progress: 100, stateText: '等待处理' });
+          return;
         }
+
+        const uploadUrl = String(initData.uploadUrl || '').trim();
+        const objectKey = String(initData.objectKey || '').trim();
+        if (!uploadUrl || !objectKey) {
+          throw new Error(initData.message || t('detail.uploadDirectFailed'));
+        }
+
+        const putHeaders = { ...(initData.headers && typeof initData.headers === 'object' ? initData.headers : {}) };
+        if (!putHeaders['Content-Type'] && !putHeaders['content-type']) {
+          putHeaders['Content-Type'] = mimeType;
+        }
+
+        updateUploadItem(row.id, { progress: 8, stateText: '上传中' });
+        await uploadToStorageAxios.put(uploadUrl, file, {
+          headers: putHeaders,
+          timeout: UPLOAD_REQUEST_TIMEOUT_MS,
+          onUploadProgress: (progressEvent) => {
+            const totalBytes = Number(progressEvent?.total || file.size || 0);
+            const loaded = Number(progressEvent?.loaded || 0);
+            if (!totalBytes) return;
+            const ratio = loaded / totalBytes;
+            const percent = Math.min(98, Math.round(8 + ratio * 90));
+            updateUploadItem(row.id, { progress: percent, stateText: '上传中' });
+          }
+        });
+
+        updateUploadItem(row.id, { progress: 99, stateText: '等待入队' });
+        const completeRes = await api.kb.presignComplete(
+          detail.value.id,
+          {
+            objectKey,
+            contentSha256,
+            fileName: file.name,
+            fileSize: file.size,
+            mimeType,
+            uploadMode: 'normal',
+            metadata: { source: 'upload-presign' }
+          },
+          { timeoutMs: UPLOAD_REQUEST_TIMEOUT_MS }
+        );
+        const completeData = completeRes?.data || {};
+
+        if (completeData.dedupReused) {
+          reusedCount += 1;
+          updateUploadItem(row.id, { progress: 100, progressStatus: 'success', stateText: '已复用' });
+          return;
+        }
+
+        acceptedCount += 1;
+        const taskId = Number(completeData.job?.id || 0);
+        if (taskId) activeTaskIds.add(taskId);
+        updateUploadItem(row.id, {
+          progress: 100,
+          progressStatus: '',
+          stateText: '等待处理',
+          taskId: taskId || null
+        });
       } catch (error) {
         failedCount += 1;
-        const message = error?.response?.data?.message || error.message || '上传失败';
+        const apiMsg = error?.response?.data?.message;
+        const message = apiMsg || error.message || t('detail.uploadDirectFailed');
         updateUploadItem(row.id, {
           progressStatus: 'exception',
           stateText: message

@@ -5,8 +5,10 @@ const {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
-  DeleteObjectCommand
+  DeleteObjectCommand,
+  HeadObjectCommand
 } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 function buildStorageConfig() {
   const enabled = String(process.env.KB_OBJECT_STORAGE_ENABLED || 'false').toLowerCase() === 'true';
@@ -141,6 +143,47 @@ async function deleteObjectByUri(storageUri = '') {
   return true;
 }
 
+async function presignPutObjectUrl({
+  objectKey,
+  contentType = 'application/octet-stream',
+  expiresIn = 3600
+} = {}) {
+  const config = buildStorageConfig();
+  ensureStorageConfig(config);
+  const client = buildClient(config);
+  const command = new PutObjectCommand({
+    Bucket: config.bucket,
+    Key: objectKey,
+    ContentType: contentType
+  });
+  const url = await getSignedUrl(client, command, { expiresIn });
+  return { uploadUrl: url, expiresIn, bucket: config.bucket };
+}
+
+async function headObjectMeta(objectKey = '') {
+  const config = buildStorageConfig();
+  ensureStorageConfig(config);
+  const client = buildClient(config);
+  try {
+    const response = await client.send(new HeadObjectCommand({
+      Bucket: config.bucket,
+      Key: objectKey
+    }));
+    return {
+      contentLength: Number(response.ContentLength ?? 0),
+      contentType: String(response.ContentType || '')
+    };
+  } catch (error) {
+    const status = error?.$metadata?.httpStatusCode;
+    if (error?.name === 'NotFound' || status === 404) {
+      const err = new Error('kb.presignObjectMissing');
+      err.code = 'kb.presignObjectMissing';
+      throw err;
+    }
+    throw error;
+  }
+}
+
 module.exports = {
   buildStorageConfig,
   ensureStorageConfig,
@@ -151,5 +194,7 @@ module.exports = {
   uploadLocalFile,
   uploadBuffer,
   getObjectBufferByUri,
-  deleteObjectByUri
+  deleteObjectByUri,
+  presignPutObjectUrl,
+  headObjectMeta
 };

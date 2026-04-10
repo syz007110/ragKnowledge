@@ -12,6 +12,8 @@ const {
   purgeRecycleBinItems,
   getCollectionFiles,
   uploadCollectionFiles,
+  initPresignedUploadItem,
+  completePresignedUploadItem,
   createIngestTask,
   retrievalDebugItem,
   retrievalSearchItem,
@@ -43,6 +45,8 @@ router.post('/recycle-bin/restore', requireKbPermission('kb:upload'), restoreRec
 router.post('/recycle-bin/purge', requireKbPermission('kb:delete'), purgeRecycleBinItems);
 router.get('/collections/:id/files', requireKbPermission('kb:read'), getCollectionFiles);
 router.post('/collections/:id/files/upload', requireKbPermission('kb:upload'), kbUploadMiddleware, uploadCollectionFiles);
+router.post('/collections/:id/files/presign-init', requireKbPermission('kb:upload'), initPresignedUploadItem);
+router.post('/collections/:id/files/presign-complete', requireKbPermission('kb:upload'), completePresignedUploadItem);
 
 router.post('/ingest-tasks', requireKbPermission('kb:upload'), createIngestTask);
 router.post('/retrieval/debug', requireKbPermission('kb:read'), retrievalDebugItem);
