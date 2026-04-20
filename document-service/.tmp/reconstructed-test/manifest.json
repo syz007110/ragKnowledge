@@ -1,0 +1,10 @@
+{
+  "sourceJson": "D:\\code\\project\\medbot\\MKnowledge\\document-service\\docs\\unified-parse-schema.example.json",
+  "schemaVersion": "2.0",
+  "parserKind": "docx_python_docx_v3",
+  "fileExt": "docx",
+  "imagesWritten": [
+    "ast-img-001"
+  ],
+  "note": "Lossy reconstruction; not equivalent to original binary."
+}

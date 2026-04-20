@@ -1,0 +1,14 @@
+{
+  "sourceJson": "D:\\code\\project\\medbot\\MKnowledge\\document-service\\docs\\unified-parse-schema.example.json",
+  "schemaVersion": "2.0",
+  "parserKind": "docx_python_docx_v3",
+  "fileExt": "docx",
+  "imagesWritten": [
+    "ast-img-001"
+  ],
+  "structured": {
+    "structured": "ok",
+    "path": "D:\\code\\project\\medbot\\MKnowledge\\document-service\\.tmp\\rebuilt-struct\\rebuilt.docx"
+  },
+  "note": "Semantic re-export from parseDocument + embeddedImagePayloads; not original binary."
+}

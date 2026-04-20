@@ -98,6 +98,14 @@ def build_chunk_view(pages: list[dict]) -> dict[str, Any]:
                 blocks.append(item)
             return
 
+        if btype == "formula":
+            text = _plain_text_from_lines(block.get("lines")).strip()
+            if not text:
+                text = str(block.get("formulaLatex") or "").strip()
+            if text:
+                blocks.append({"type": "paragraph", "text": text})
+            return
+
         if btype == "code":
             text = _plain_text_from_lines(block.get("lines")).strip()
             if text:
@@ -191,6 +199,34 @@ def build_chunk_view(pages: list[dict]) -> dict[str, Any]:
     return {"blocks": blocks}
 
 
+def pages_have_bbox(pages: list[dict]) -> bool:
+    def walk_block(block: dict) -> bool:
+        if not isinstance(block, dict):
+            return False
+        if block.get("bbox"):
+            return True
+        for line in block.get("lines") or []:
+            if not isinstance(line, dict):
+                continue
+            if line.get("bbox"):
+                return True
+            for sp in line.get("spans") or []:
+                if isinstance(sp, dict) and sp.get("bbox"):
+                    return True
+        for ch in block.get("blocks") or []:
+            if isinstance(ch, dict) and walk_block(ch):
+                return True
+        return False
+
+    for page in pages or []:
+        if not isinstance(page, dict):
+            continue
+        for block in page.get("blocks") or []:
+            if isinstance(block, dict) and walk_block(block):
+                return True
+    return False
+
+
 def _row_to_kv_line(headers: list[str], values: list[str]) -> str:
     pieces: list[str] = []
     max_len = max(len(headers), len(values))
@@ -220,24 +256,32 @@ def assemble_parse_document(
     assets: list[dict],
     warnings: list[str] | None = None,
     reading_order_policy: str | None = None,
+    parse_route: str = "native",
+    has_bbox: bool | None = None,
+    meta_extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     warn = list(warnings or [])
+    use_pages = pages if pages else [{"pageIndex": 0, "blocks": []}]
+    hb = has_bbox if has_bbox is not None else pages_have_bbox(use_pages)
     meta: dict[str, Any] = {
-        "pageCount": len(pages) if pages else 1,
+        "pageCount": len(use_pages) if use_pages else 1,
         "sourceFileName": source_file_name or "",
         "warnings": warn,
-        "hasBbox": False,
+        "hasBbox": hb,
     }
     if reading_order_policy:
         meta["readingOrderPolicy"] = reading_order_policy
+    if meta_extra:
+        for k, v in meta_extra.items():
+            meta[k] = v
     doc: dict[str, Any] = {
         "schemaVersion": "2.0",
-        "parseRoute": "native",
+        "parseRoute": parse_route,
         "fileExt": file_ext,
         "parserKind": parser_kind,
         "meta": meta,
         "assets": assets,
-        "pages": pages if pages else [{"pageIndex": 0, "blocks": []}],
+        "pages": use_pages,
     }
     doc["chunkView"] = build_chunk_view(doc["pages"])
     return doc

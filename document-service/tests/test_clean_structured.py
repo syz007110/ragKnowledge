@@ -52,6 +52,73 @@ def test_clean_docx_drops_header_footer_text_and_keeps_body() -> None:
     assert all("headingPath" in b for b in cleaned["chunkView"]["blocks"])
 
 
+def test_clean_drops_toc_source_region() -> None:
+    pd = {
+        "schemaVersion": "2.0",
+        "parseRoute": "native",
+        "fileExt": "docx",
+        "parserKind": "test",
+        "meta": {"pageCount": 1, "sourceFileName": "x", "warnings": [], "hasBbox": False},
+        "assets": [],
+        "pages": [
+            {
+                "pageIndex": 0,
+                "blocks": [
+                    {
+                        "id": "b-toc",
+                        "type": "paragraph",
+                        "readingOrder": 0,
+                        "lines": [{"id": "l1", "spans": [{"id": "s1", "text": "toc-line"}]}],
+                        "sourceRegion": "toc",
+                    },
+                    {
+                        "id": "b-body",
+                        "type": "paragraph",
+                        "readingOrder": 1,
+                        "lines": [{"id": "l2", "spans": [{"id": "s2", "text": "body-line"}]}],
+                    },
+                ],
+            }
+        ],
+    }
+    cleaned = clean_parse_document(pd)
+    texts = [str(b.get("text") or "") for b in cleaned["chunkView"]["blocks"]]
+    assert not any("toc-line" in t for t in texts)
+    assert any("body-line" in t for t in texts)
+    assert "toc" in cleaned["meta"]["cleaning"]["droppedSourceRegions"]
+
+
+def test_clean_docx_drops_toc_styled_paragraph() -> None:
+    pytest.importorskip("docx")
+    from docx import Document
+
+    from app.parsers.docx_parser import DocxParser
+
+    buf = io.BytesIO()
+    doc = Document()
+    try:
+        doc.styles["TOC 1"]
+    except KeyError:
+        pytest.skip("built-in TOC 1 style not in template")
+    p = doc.add_paragraph("Synthetic TOC row")
+    p.style = "TOC 1"
+    doc.add_paragraph("Main body text")
+    doc.save(buf)
+    parser = DocxParser()
+    result = parser.parse(buf.getvalue(), filename="t.docx", file_ext="docx", mime_type="")
+    pd = result.parse_document or {}
+    assert any(
+        (b.get("sourceRegion") == "toc")
+        for p in (pd.get("pages") or [])
+        for b in (p.get("blocks") or [])
+        if isinstance(b, dict)
+    )
+    cleaned = clean_parse_document(pd)
+    flat = " ".join(str(b.get("text") or "") for b in cleaned["chunkView"]["blocks"])
+    assert "Synthetic TOC row" not in flat
+    assert "Main body text" in flat
+
+
 def test_clean_parse_minimal_dict_filters_regions() -> None:
     pd = {
         "schemaVersion": "2.0",

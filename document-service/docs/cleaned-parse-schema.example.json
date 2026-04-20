@@ -4,7 +4,7 @@
     "parseSchemaVersion": "2.0",
     "parseRoute": "native",
     "fileExt": "docx",
-    "parserKind": "docx_python_docx_v2",
+    "parserKind": "docx_python_docx_v3",
     "sourceFileName": "example.docx"
   },
   "meta": {
@@ -14,8 +14,8 @@
     "hasBbox": false,
     "cleaning": {
       "policy": "docx_body_v1",
-      "droppedSourceRegions": ["header", "footer"],
-      "droppedBlockRoles": ["toc"],
+      "droppedSourceRegions": ["footer", "header", "toc"],
+      "droppedBlockRoles": [],
       "removedAssetIds": ["ast-img-1"]
     }
   },

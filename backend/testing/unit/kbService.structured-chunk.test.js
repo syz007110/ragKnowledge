@@ -2,24 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  splitStructuredBlocksToChunks,
   buildVectorChunkContent,
   runWithBackoffRetry
 } = require('../../src/services/kbService');
-
-test('splitStructuredBlocksToChunks keeps table rows as standalone chunks', () => {
-  const chunks = splitStructuredBlocksToChunks([
-    { type: 'heading', level: 1, text: '财务明细' },
-    { type: 'table_row', rowKvText: '姓名: 张三; 金额: 100', tableId: 'table-1', rowIndex: 1 },
-    { type: 'table_row', rowKvText: '姓名: 李四; 金额: 200', tableId: 'table-1', rowIndex: 2 }
-  ], 800);
-
-  assert.equal(chunks.length, 3);
-  assert.equal(chunks[1].chunkType, 'table_row');
-  assert.equal(chunks[2].chunkType, 'table_row');
-  assert.equal(chunks[1].rowKvText, '姓名: 张三; 金额: 100');
-  assert.equal(chunks[2].rowKvText, '姓名: 李四; 金额: 200');
-});
 
 test('buildVectorChunkContent includes heading and row context', () => {
   const content = buildVectorChunkContent({

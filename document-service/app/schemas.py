@@ -51,7 +51,7 @@ class CleanParseRequest(BaseModel):
 
 
 class CleanedDocumentResponse(BaseModel):
-    """CleanedDocument (see docs/cleaned-parse-schema.md)."""
+    """CleanedDocument (see docs/cleaned-parse-schema.example.json)."""
 
     schemaVersion: str = "1.0"
     upstream: dict = Field(default_factory=dict)
@@ -59,5 +59,15 @@ class CleanedDocumentResponse(BaseModel):
     assets: list = Field(default_factory=list)
     pages: list = Field(default_factory=list)
     chunkView: dict = Field(default_factory=dict)
+
+
+class PlainFromPagesRequest(BaseModel):
+    """POST /internal/v1/plain-from-pages — flatten text from ParseDocument/CleanedDocument pages."""
+
+    pages: list = Field(default_factory=list)
+
+
+class PlainFromPagesResponse(BaseModel):
+    plainText: str = ""
 
 

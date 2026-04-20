@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs/promises');
 const path = require('path');
-const { Op } = require('sequelize');
+const { Op, QueryTypes } = require('sequelize');
 const axios = require('axios');
 const { kbIngestQueue, kbPurgeQueue } = require('../config/queue');
 const kbStorage = require('../config/kbStorage');
@@ -13,7 +13,6 @@ const {
   ensureStorageConfig,
   buildUploadObjectKey,
   buildS3Uri,
-  uploadBuffer,
   getObjectBufferByUri,
   presignPutObjectUrl
 } = require('./objectStorageService');
@@ -136,6 +135,71 @@ function getRecycleCutoffDate(now = new Date()) {
 function withinRecycleWindow(date, now = new Date()) {
   if (!date) return false;
   return new Date(date).getTime() >= getRecycleCutoffDate(now).getTime();
+}
+
+/** Aligns with kbController.normalizeUploadFileName for recycle / dedup matching */
+function normalizeKbUploadFileNameForMatch(name = '') {
+  const raw = String(name || '').trim();
+  if (!raw) return '';
+  if (/[^\u0000-\u00ff]/.test(raw)) {
+    return raw;
+  }
+  try {
+    const decoded = Buffer.from(raw, 'latin1').toString('utf8').trim();
+    if (!decoded || decoded.includes('\uFFFD')) return raw;
+    if (/[^\u0000-\u00ff]/.test(decoded)) return decoded;
+    return raw;
+  } catch (_) {
+    return raw;
+  }
+}
+
+async function findRecycleRestoreMatchForUpload({
+  collectionId,
+  fileName,
+  contentSha256,
+  uploadMode = 'normal'
+} = {}) {
+  if (uploadMode === 'force_version') return null;
+  const matchName = normalizeKbUploadFileNameForMatch(fileName);
+  if (!matchName) return null;
+
+  const hash = String(contentSha256 || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(hash)) return null;
+
+  const deleted = await KbFile.findOne({
+    where: {
+      collectionId,
+      fileName: matchName,
+      contentSha256: hash,
+      isDeleted: 1
+    },
+    order: [['id', 'DESC']]
+  });
+  if (!deleted) return null;
+
+  const now = new Date();
+  if (!withinRecycleWindow(deleted.deletedAt, now)) return null;
+
+  const parent = await KbCollection.findByPk(collectionId);
+  if (!parent) return null;
+
+  const collectionDeleted = Number(parent.isDeleted) === 1;
+  return {
+    deletedFile: {
+      id: deleted.id,
+      fileName: deleted.fileName,
+      fileExt: deleted.fileExt,
+      collectionId: deleted.collectionId,
+      deletedAt: deleted.deletedAt
+    },
+    collection: {
+      id: parent.id,
+      name: parent.name,
+      isDeleted: parent.isDeleted
+    },
+    collectionDeleted
+  };
 }
 
 function normalizeFileExt(name, ext) {
@@ -286,464 +350,44 @@ async function getCollectionTagMap(collectionIds) {
   return map;
 }
 
-function splitPlainTextToChunks(text, maxChunkSize = 800) {
-  const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
-  if (!normalized) return [];
-
-  const paragraphs = normalized
-    .split(/\n{2,}/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  if (!paragraphs.length) return [];
-
-  const expanded = [];
-  paragraphs.forEach((part) => {
-    if (part.length <= maxChunkSize) {
-      expanded.push(part);
-      return;
-    }
-    splitLongParagraph(part, maxChunkSize).forEach((piece) => expanded.push(piece));
-  });
-  if (!expanded.length) return [];
-
-  const chunks = [];
-  let buffer = '';
-  let start = 0;
-
-  expanded.forEach((part) => {
-    if (!buffer) {
-      buffer = part;
-      return;
-    }
-    if ((buffer.length + 2 + part.length) <= maxChunkSize) {
-      buffer += `\n\n${part}`;
-      return;
-    }
-    chunks.push({
-      text: buffer,
-      startOffset: start,
-      endOffset: start + buffer.length
-    });
-    start += buffer.length;
-    buffer = part;
-  });
-
-  if (buffer) {
-    chunks.push({
-      text: buffer,
-      startOffset: start,
-      endOffset: start + buffer.length
-    });
+/** Normalize chunk dicts returned by document-service /internal/v1/chunk. */
+function normalizePythonChunkForIngest(item) {
+  const text = String(item?.text || '');
+  const start = Number.isFinite(Number(item?.startOffset)) ? Number(item.startOffset) : 0;
+  let end = Number.isFinite(Number(item?.endOffset)) ? Number(item.endOffset) : start + text.length;
+  if (end < start) {
+    end = start + text.length;
   }
-
-  return chunks;
+  return {
+    text,
+    headingPath: Array.isArray(item?.headingPath) ? item.headingPath : [],
+    assetKeys: Array.isArray(item?.assetKeys) ? item.assetKeys.map((k) => String(k)) : [],
+    chunkType: String(item?.chunkType || 'paragraph'),
+    rowKvText: String(item?.rowKvText || ''),
+    sheetName: String(item?.sheetName || ''),
+    tableId: String(item?.tableId || ''),
+    rowIndex: Number(item?.rowIndex || 0),
+    startOffset: start,
+    endOffset: end
+  };
 }
 
-function splitLongParagraph(text, maxChunkSize) {
-  const value = String(text || '').trim();
-  if (!value) return [];
-  if (value.length <= maxChunkSize) return [value];
-
-  const sentenceParts = value
-    .split(/(?<=[。！？；.!?;])(?=\S)/u)
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  if (!sentenceParts.length) {
-    const pieces = [];
-    for (let index = 0; index < value.length; index += maxChunkSize) {
-      pieces.push(value.slice(index, index + maxChunkSize));
-    }
-    return pieces;
-  }
-
-  const chunks = [];
-  let buffer = '';
-  sentenceParts.forEach((part) => {
-    if (!buffer) {
-      buffer = part;
-      return;
-    }
-    if ((buffer.length + part.length) <= maxChunkSize) {
-      buffer += part;
-      return;
-    }
-    chunks.push(buffer);
-    buffer = part;
-  });
-  if (buffer) chunks.push(buffer);
-  return chunks;
-}
-
-function parseMarkdownHeading(paragraph) {
-  const line = String(paragraph || '').trim();
-  if (!line) return null;
-
-  const markdownMatch = line.match(/^(#{1,6})\s+(.+)$/);
-  if (markdownMatch) {
-    return {
-      level: markdownMatch[1].length,
-      label: `${markdownMatch[1]} ${markdownMatch[2].trim()}`
-    };
-  }
-
-  const numericMatch = line.match(/^(\d+(?:\.\d+){0,5})[.、]?\s+(.+)$/);
-  if (numericMatch) {
-    const order = numericMatch[1];
-    return {
-      level: Math.max(1, order.split('.').length),
-      label: `${order} ${numericMatch[2].trim()}`
-    };
-  }
-
-  const chapterMatch = line.match(/^(第[一二三四五六七八九十百千万零〇0-9]+[章节篇部])\s*(.*)$/);
-  if (chapterMatch) {
-    return {
-      level: 1,
-      label: `${chapterMatch[1]} ${String(chapterMatch[2] || '').trim()}`.trim()
-    };
-  }
-
-  const chineseMatch = line.match(/^([一二三四五六七八九十百千万零〇]+)[、.．]\s*(.+)$/);
-  if (chineseMatch) {
-    return {
-      level: 1,
-      label: `${chineseMatch[1]}、${chineseMatch[2].trim()}`
-    };
-  }
-
-  const nestedChineseMatch = line.match(/^[（(]([一二三四五六七八九十百千万零〇0-9]+)[)）]\s*(.+)$/);
-  if (nestedChineseMatch) {
-    return {
-      level: 2,
-      label: `(${nestedChineseMatch[1]}) ${nestedChineseMatch[2].trim()}`
-    };
-  }
-
-  return null;
-}
-
-function updateHeadingPath(stack, heading) {
-  const safeLevel = Math.max(1, Number(heading.level) || 1);
-  while (stack.length >= safeLevel) {
-    stack.pop();
-  }
-  stack.push(heading.label);
-  return [...stack];
-}
-
-function splitMarkdownToChunks(text, maxChunkSize = 800) {
-  const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
-  if (!normalized) return [];
-
-  const paragraphs = normalized
-    .split(/\n{2,}/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  if (!paragraphs.length) return [];
-
-  const headingStack = [];
-  const atomicUnits = [];
-  let pendingHeadingUnit = null;
-
-  paragraphs.forEach((paragraph) => {
-    const heading = parseMarkdownHeading(paragraph);
-    if (heading) {
-      if (pendingHeadingUnit) {
-        atomicUnits.push(pendingHeadingUnit);
-      }
-      pendingHeadingUnit = {
-        parts: [paragraph],
-        headingPath: updateHeadingPath(headingStack, heading)
-      };
-      return;
-    }
-
-    if (pendingHeadingUnit) {
-      pendingHeadingUnit.parts.push(paragraph);
-      atomicUnits.push(pendingHeadingUnit);
-      pendingHeadingUnit = null;
-      return;
-    }
-
-    atomicUnits.push({
-      parts: [paragraph],
-      headingPath: [...headingStack]
-    });
-  });
-
-  if (pendingHeadingUnit) {
-    atomicUnits.push(pendingHeadingUnit);
-  }
-
-  // Split only when a single non-heading paragraph itself is too long.
-  const atomicSegments = [];
-  atomicUnits.forEach((unit) => {
-    const joined = unit.parts.join('\n\n');
-    if (joined.length <= maxChunkSize) {
-      atomicSegments.push({
-        text: joined,
-        headingPath: unit.headingPath
-      });
-      return;
-    }
-
-    if (unit.parts.length === 1) {
-      splitLongParagraph(unit.parts[0], maxChunkSize).forEach((piece) => {
-        atomicSegments.push({
-          text: piece,
-          headingPath: unit.headingPath
-        });
-      });
-      return;
-    }
-
-    // Keep heading + first body paragraph bound even if oversized.
-    atomicSegments.push({
-      text: joined,
-      headingPath: unit.headingPath
-    });
-  });
-
-  const merged = [];
-  atomicSegments.forEach((segment) => {
-    if (!merged.length) {
-      merged.push({
-        text: segment.text,
-        headingPath: segment.headingPath
-      });
-      return;
-    }
-
-    const prev = merged[merged.length - 1];
-    const prevPathKey = JSON.stringify(prev.headingPath || []);
-    const currentPathKey = JSON.stringify(segment.headingPath || []);
-    const canMerge =
-      prevPathKey === currentPathKey &&
-      (prev.text.length + 2 + segment.text.length) <= maxChunkSize;
-
-    if (!canMerge) {
-      merged.push({
-        text: segment.text,
-        headingPath: segment.headingPath
-      });
-      return;
-    }
-
-    prev.text = `${prev.text}\n\n${segment.text}`;
-  });
-
-  const chunks = [];
-  let start = 0;
-  merged.forEach((item) => {
-    chunks.push({
-      text: item.text,
-      headingPath: item.headingPath || [],
-      startOffset: start,
-      endOffset: start + item.text.length
-    });
-    start += item.text.length;
-  });
-
-  return chunks;
-}
-
-function splitTextToChunks(text, { fileExt = '', maxChunkSize = 800 } = {}) {
+function resolveIngestParserMeta(fileExt, enrichedParseDocument) {
   const ext = String(fileExt || '').toLowerCase();
-  if (ext === 'md') {
-    return splitMarkdownToChunks(text, maxChunkSize);
+  if (enrichedParseDocument && String(enrichedParseDocument.parserKind || '').trim()) {
+    return {
+      parser: String(enrichedParseDocument.parserKind).trim(),
+      cleaner: ext,
+      version: 7
+    };
   }
-  return splitPlainTextToChunks(text, maxChunkSize);
-}
-
-function splitStructuredBlocksToChunks(blocks = [], maxChunkSize = 800) {
-  const safeBlocks = Array.isArray(blocks) ? blocks : [];
-  const headingStack = [];
-  const atomicSegments = [];
-  /** Images before any text block: attach to first text segment when it appears. Otherwise images attach to the previous segment immediately. */
-  let pendingImages = [];
-
-  safeBlocks.forEach((block) => {
-    if (!block) return;
-    if (block.type === 'image' && block.imageKey) {
-      const key = String(block.imageKey);
-      if (atomicSegments.length) {
-        const prev = atomicSegments[atomicSegments.length - 1];
-        prev.assetKeys = [...(prev.assetKeys || []), key];
-      } else {
-        pendingImages.push(key);
-      }
-      return;
-    }
-    if (block.type === 'table_row') {
-      const rowText = String(block.rowKvText || block.text || '').trim();
-      if (!rowText) return;
-      atomicSegments.push({
-        text: rowText,
-        headingPath: [...headingStack],
-        assetKeys: pendingImages,
-        chunkType: 'table_row',
-        rowKvText: rowText,
-        sheetName: String(block.sheetName || '').trim(),
-        tableId: String(block.tableId || '').trim(),
-        rowIndex: Number(block.rowIndex || 0)
-      });
-      pendingImages = [];
-      return;
-    }
-    if (block.type === 'table_summary') {
-      const summaryText = String(block.text || '').trim();
-      if (!summaryText) return;
-      atomicSegments.push({
-        text: summaryText,
-        headingPath: [...headingStack],
-        assetKeys: pendingImages,
-        chunkType: 'table_summary',
-        rowKvText: '',
-        sheetName: String(block.sheetName || '').trim(),
-        tableId: String(block.tableId || '').trim(),
-        rowIndex: 0
-      });
-      pendingImages = [];
-      return;
-    }
-    const text = String(block.text || '').trim();
-    if (!text) return;
-    let currentHeadingPath = [...headingStack];
-    if (block.type === 'heading') {
-      const level = Math.max(1, Number(block.level) || 1);
-      while (headingStack.length >= level) headingStack.pop();
-      headingStack.push(text);
-      currentHeadingPath = [...headingStack];
-    }
-    atomicSegments.push({
-      text,
-      headingPath: currentHeadingPath,
-      assetKeys: pendingImages,
-      chunkType: block.type === 'heading' ? 'heading' : 'paragraph',
-      rowKvText: '',
-      sheetName: '',
-      tableId: '',
-      rowIndex: 0
-    });
-    pendingImages = [];
-  });
-
-  const expanded = [];
-  atomicSegments.forEach((segment) => {
-    if (segment.text.length <= maxChunkSize) {
-      expanded.push(segment);
-      return;
-    }
-    const pieces = splitLongParagraph(segment.text, maxChunkSize);
-    pieces.forEach((piece, idx) => {
-      expanded.push({
-        text: piece,
-        headingPath: segment.headingPath,
-        assetKeys: idx === 0 ? segment.assetKeys : [],
-        chunkType: segment.chunkType || 'paragraph',
-        rowKvText: idx === 0 ? (segment.rowKvText || '') : '',
-        sheetName: segment.sheetName || '',
-        tableId: segment.tableId || '',
-        rowIndex: segment.rowIndex || 0
-      });
-    });
-  });
-
-  const merged = [];
-  expanded.forEach((segment) => {
-    if (!merged.length) {
-      merged.push({
-        text: segment.text,
-        headingPath: segment.headingPath,
-        assetKeys: [...(segment.assetKeys || [])],
-        chunkType: segment.chunkType || 'paragraph',
-        rowKvText: segment.rowKvText || '',
-        sheetName: segment.sheetName || '',
-        tableId: segment.tableId || '',
-        rowIndex: segment.rowIndex || 0
-      });
-      return;
-    }
-    const prev = merged[merged.length - 1];
-    const canMerge =
-      safeJsonString(prev.headingPath) === safeJsonString(segment.headingPath) &&
-      String(prev.chunkType || '') === String(segment.chunkType || '') &&
-      String(segment.chunkType || '') !== 'table_row' &&
-      (prev.text.length + 2 + segment.text.length) <= maxChunkSize;
-    if (!canMerge) {
-      merged.push({
-        text: segment.text,
-        headingPath: segment.headingPath,
-        assetKeys: [...(segment.assetKeys || [])],
-        chunkType: segment.chunkType || 'paragraph',
-        rowKvText: segment.rowKvText || '',
-        sheetName: segment.sheetName || '',
-        tableId: segment.tableId || '',
-        rowIndex: segment.rowIndex || 0
-      });
-      return;
-    }
-    prev.text = `${prev.text}\n\n${segment.text}`;
-    prev.assetKeys = Array.from(new Set([...(prev.assetKeys || []), ...(segment.assetKeys || [])]));
-    if (!prev.rowKvText && segment.rowKvText) {
-      prev.rowKvText = segment.rowKvText;
-    }
-  });
-
-  const chunks = [];
-  let start = 0;
-  merged.forEach((item) => {
-    chunks.push({
-      text: item.text,
-      headingPath: item.headingPath || [],
-      assetKeys: item.assetKeys || [],
-      chunkType: item.chunkType || 'paragraph',
-      rowKvText: item.rowKvText || '',
-      sheetName: item.sheetName || '',
-      tableId: item.tableId || '',
-      rowIndex: item.rowIndex || 0,
-      startOffset: start,
-      endOffset: start + item.text.length
-    });
-    start += item.text.length;
-  });
-  return chunks;
-}
-
-function cleanTextByType(rawText, fileExt) {
-  const normalized = String(rawText || '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\f/g, '\n')
-    .replace(/\u0000/g, '');
-  const cleanedLines = normalized
-    .split('\n')
-    .map((line) => line.replace(/\s+$/g, ''))
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n');
-  if (fileExt === 'md') {
-    return cleanedLines
-      .replace(/^---\n[\s\S]*?\n---\n?/u, '')
-      .replace(/^(#{1,6})([^\s#])/gm, '$1 $2')
-      .trim();
+  if (enrichedParseDocument) {
+    return { parser: 'document_service', cleaner: ext, version: 7 };
   }
-  if (fileExt === 'xlsx') {
-    return cleanedLines.trim();
+  if (ext === 'txt') {
+    return { parser: 'direct_text_v1', cleaner: ext, version: 1 };
   }
-  if (fileExt === 'pdf') {
-    return cleanedLines
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/\n([a-zA-Z])(?=[a-zA-Z]{2,})/g, ' $1')
-      .replace(/^\s*(第?\s*\d+\s*页|page\s*\d+)\s*$/gim, '')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-  }
-  if (fileExt !== 'txt') {
-    return cleanedLines.trim();
-  }
-  return cleanedLines.trim();
+  return { parser: 'direct_text_v1', cleaner: ext, version: 1 };
 }
 
 function buildEsConfig() {
@@ -1450,52 +1094,8 @@ async function submitRecyclePurgeJobs({ collectionIds = [], fileIds = [], user, 
     });
   }
 
-  const createdJobs = [];
-  for (const jobItem of jobs) {
-    const idempotencyKey = `purge:${jobItem.bizType}:${jobItem.bizId}:${Date.now()}:${Math.round(Math.random() * 1000)}`;
-    const jobRecord = await KbJob.create({
-      jobType: 'purge',
-      bizType: jobItem.bizType,
-      bizId: jobItem.bizId,
-      idempotencyKey,
-      queueName: 'kb-purge',
-      payloadJson: {
-        locale
-      },
-      status: 'queued',
-      createdBy: operatorId
-    });
-    const queueJob = await kbPurgeQueue.add(
-      'purge-kb',
-      {
-        kbJobId: jobRecord.id,
-        bizType: jobItem.bizType,
-        bizId: jobItem.bizId,
-        locale,
-        operatorId
-      },
-      {
-        jobId: `kb-purge-${jobItem.bizType}-${jobItem.bizId}-job-${jobRecord.id}`
-      }
-    );
-    await jobRecord.update({
-      payloadJson: {
-        ...(jobRecord.payloadJson || {}),
-        queueJobId: queueJob.id
-      }
-    });
-    await publishKbTaskStatus({
-      taskId: jobRecord.id,
-      queueJobId: String(queueJob.id),
-      status: 'queued',
-      progress: 0,
-      fileId: jobItem.bizType === 'file' ? Number(jobItem.bizId) : null,
-      collectionId: null,
-      jobType: 'purge'
-    });
-    createdJobs.push(jobRecord);
-  }
-  return createdJobs;
+  if (!jobs.length) return [];
+  return enqueueKbPurgeJobsForItems(jobs, { locale, operatorId });
 }
 
 function resolveLocalPath(storageUri = '') {
@@ -1523,6 +1123,7 @@ async function safeDeleteStorageUri(storageUri = '') {
 async function hardDeleteFileById({ fileId, transaction }) {
   const file = await KbFile.findByPk(fileId, { transaction });
   if (!file) return false;
+  const normalizedJsonUri = String(file.normalizedJsonUri || '').trim();
   const existingAssets = await KbAsset.findAll({
     where: { fileId: file.id },
     attributes: ['storageUri'],
@@ -1574,6 +1175,9 @@ async function hardDeleteFileById({ fileId, transaction }) {
   });
   for (const assetStorageUri of assetStorageUris) {
     await safeDeleteStorageUri(assetStorageUri);
+  }
+  if (normalizedJsonUri) {
+    await safeDeleteStorageUri(normalizedJsonUri);
   }
   if (isS3Uri(file.storageUri)) {
     await deleteObjectByUri(file.storageUri);
@@ -1789,14 +1393,14 @@ async function listCollectionFilesPaged({
     const hasKeyChannelsReady = indexSummary.esStatus === 'done'
       && (!requireVectorSync || indexSummary.vectorStatus === 'done');
     let displayStatus = 'processing';
-    if (failedFile || latestJobStatus === 'failed') {
+    if (latestJobStatus === 'processing' || ['parsing', 'indexing'].includes(String(plain.status || ''))) {
+      displayStatus = 'processing';
+    } else if (failedFile || latestJobStatus === 'failed') {
       displayStatus = 'failed';
     } else if (latestJobStatus === 'queued' || plain.status === 'uploaded') {
       displayStatus = 'waiting';
     } else if (plain.status === 'ready' && hasKeyChannelsReady) {
       displayStatus = 'ready';
-    } else if (latestJobStatus === 'processing' || ['parsing', 'indexing'].includes(String(plain.status || ''))) {
-      displayStatus = 'processing';
     }
 
     return {
@@ -1899,14 +1503,14 @@ async function getFilePreviewData({ id }) {
   const hasKeyChannelsReady = indexSummary.esStatus === 'done'
     && (!requireVectorSync || indexSummary.vectorStatus === 'done');
   let displayStatus = 'processing';
-  if (failedFile || latestJobStatus === 'failed') {
+  if (latestJobStatus === 'processing' || ['parsing', 'indexing'].includes(String(plain.status || ''))) {
+    displayStatus = 'processing';
+  } else if (failedFile || latestJobStatus === 'failed') {
     displayStatus = 'failed';
   } else if (latestJobStatus === 'queued' || plain.status === 'uploaded') {
     displayStatus = 'waiting';
   } else if (plain.status === 'ready' && hasKeyChannelsReady) {
     displayStatus = 'ready';
-  } else if (latestJobStatus === 'processing' || ['parsing', 'indexing'].includes(String(plain.status || ''))) {
-    displayStatus = 'processing';
   }
 
   const fileExt = normalizeFileExt(file.fileName, file.fileExt);
@@ -1957,7 +1561,7 @@ async function getFilePreviewData({ id }) {
     };
   }
 
-  let sourceText = cleanTextByType(parsed.rawText || '', fileExt);
+  let sourceText = String(parsed.rawText || '');
   let sourceTruncated = false;
   if (sourceText.length > PREVIEW_MAX_SOURCE_CHARS) {
     sourceText = sourceText.slice(0, PREVIEW_MAX_SOURCE_CHARS);
@@ -2003,6 +1607,136 @@ async function getFilePreviewData({ id }) {
   };
 }
 
+async function getLatestFileJobStatus(fileId) {
+  const latest = await KbJob.findOne({
+    where: {
+      bizType: 'file',
+      bizId: Number(fileId)
+    },
+    attributes: ['status', 'createdAt'],
+    order: [['createdAt', 'DESC']]
+  });
+  return latest ? String(latest.status || '') : '';
+}
+
+function isFileBusyForMutatingAction({ latestJobStatus = '', fileStatus = '' } = {}) {
+  const latest = String(latestJobStatus || '');
+  const status = String(fileStatus || '');
+  if (latest === 'queued' || latest === 'processing') return true;
+  return status === 'parsing' || status === 'indexing';
+}
+
+async function assertFileNotBusyForMutatingAction(file) {
+  if (!file) return;
+  const latestJobStatus = await getLatestFileJobStatus(file.id);
+  if (isFileBusyForMutatingAction({
+    latestJobStatus,
+    fileStatus: file.status
+  })) {
+    throw new Error('kb.fileBusyProcessing');
+  }
+}
+
+/** Thrown when ingest should stop because the file was soft-deleted (no DB/ES/vector writes). */
+const INGEST_JOB_ABORT_FILE_DELETED = 'kb.job.fileSoftDeleted';
+
+async function assertKbFileActiveForIngestWithJob(file, job) {
+  if (!file || Number(file.isDeleted) !== 0) {
+    if (job) {
+      await job.update({
+        status: 'failed',
+        lastErrorKey: 'kb.job.abortedSoftDeleted',
+        lastError: 'file_soft_deleted'
+      });
+    }
+    throw new Error(INGEST_JOB_ABORT_FILE_DELETED);
+  }
+}
+
+/**
+ * Enqueue kb-purge jobs for recycle hard-delete (shared by manual purge + auto expiry purge).
+ */
+async function enqueueKbPurgeJobsForItems(jobItems, { locale, operatorId }) {
+  const items = Array.isArray(jobItems) ? jobItems : [];
+  const createdJobs = [];
+  for (const jobItem of items) {
+    if (!jobItem || !jobItem.bizType || !jobItem.bizId) continue;
+    const idempotencyKey = `purge:${jobItem.bizType}:${jobItem.bizId}:${Date.now()}:${Math.round(Math.random() * 1000)}`;
+    const jobRecord = await KbJob.create({
+      jobType: 'purge',
+      bizType: jobItem.bizType,
+      bizId: jobItem.bizId,
+      idempotencyKey,
+      queueName: 'kb-purge',
+      payloadJson: {
+        locale
+      },
+      status: 'queued',
+      createdBy: operatorId
+    });
+    const queueJob = await kbPurgeQueue.add(
+      'purge-kb',
+      {
+        kbJobId: jobRecord.id,
+        bizType: jobItem.bizType,
+        bizId: jobItem.bizId,
+        locale,
+        operatorId
+      },
+      {
+        jobId: `kb-purge-${jobItem.bizType}-${jobItem.bizId}-job-${jobRecord.id}`
+      }
+    );
+    await jobRecord.update({
+      payloadJson: {
+        ...(jobRecord.payloadJson || {}),
+        queueJobId: queueJob.id
+      }
+    });
+    await publishKbTaskStatus({
+      taskId: jobRecord.id,
+      queueJobId: String(queueJob.id),
+      status: 'queued',
+      progress: 0,
+      fileId: jobItem.bizType === 'file' ? Number(jobItem.bizId) : null,
+      collectionId: null,
+      jobType: 'purge'
+    });
+    createdJobs.push(jobRecord);
+  }
+  return createdJobs;
+}
+
+/**
+ * Hard-delete recycle-bin items whose soft-delete time is past the restore window (older than retention cutoff).
+ */
+async function enqueueExpiredRecyclePurgeJobs({
+  locale = String(process.env.DEFAULT_LOCALE || 'zh-CN').trim() || 'zh-CN',
+  operatorId = null
+} = {}) {
+  const now = new Date();
+  const cutoff = getRecycleCutoffDate(now);
+  const expiredWhere = {
+    isDeleted: 1,
+    deletedAt: { [Op.lt]: cutoff }
+  };
+  const [expiredCollections, expiredFiles] = await Promise.all([
+    KbCollection.findAll({
+      where: expiredWhere,
+      attributes: ['id']
+    }),
+    KbFile.findAll({
+      where: expiredWhere,
+      attributes: ['id']
+    })
+  ]);
+  const jobs = [];
+  expiredCollections.forEach((c) => jobs.push({ bizType: 'collection', bizId: c.id }));
+  expiredFiles.forEach((f) => jobs.push({ bizType: 'file', bizId: f.id }));
+  if (!jobs.length) return [];
+  return enqueueKbPurgeJobsForItems(jobs, { locale, operatorId });
+}
+
 async function deleteFile({ id, user }) {
   const file = await KbFile.findOne({
     where: {
@@ -2011,6 +1745,7 @@ async function deleteFile({ id, user }) {
     }
   });
   if (!file) return null;
+  await assertFileNotBusyForMutatingAction(file);
   try {
     await deleteEsDocsByQuery({ fileId: file.id });
   } catch (error) {
@@ -2040,6 +1775,7 @@ async function rebuildFile({ id, user, locale }) {
     }
   });
   if (!file) return null;
+  await assertFileNotBusyForMutatingAction(file);
 
   const idempotencyKey = `rebuild:${file.id}:${Date.now()}`;
   const jobRecord = await KbJob.create({
@@ -2110,6 +1846,7 @@ async function renameFile({ id, fileName, user }) {
     }
   });
   if (!file) return null;
+  await assertFileNotBusyForMutatingAction(file);
   const oldExt = normalizeFileExt(file.fileName, file.fileExt);
   const newExt = normalizeFileExt(nextName, file.fileExt);
   if (oldExt !== newExt) {
@@ -2279,6 +2016,21 @@ async function preparePresignedKbUpload({
     return { dedupReused: true, file: existing };
   }
 
+  const recycleMatch = await findRecycleRestoreMatchForUpload({
+    collectionId,
+    fileName: trimmedName,
+    contentSha256: hash,
+    uploadMode
+  });
+  if (recycleMatch) {
+    return {
+      recycleRestoreMatch: true,
+      deletedFile: recycleMatch.deletedFile,
+      collectionDeleted: recycleMatch.collectionDeleted,
+      collection: recycleMatch.collection
+    };
+  }
+
   const objectKey = buildUploadObjectKey({ collectionId, fileName: trimmedName });
   let contentType = String(mimeType || '').trim();
   if (!contentType) {
@@ -2369,6 +2121,21 @@ async function submitIngestTask({
     return {
       dedupReused: true,
       file: existing
+    };
+  }
+
+  const recycleMatch = await findRecycleRestoreMatchForUpload({
+    collectionId,
+    fileName,
+    contentSha256: contentHash,
+    uploadMode
+  });
+  if (recycleMatch) {
+    return {
+      recycleRestoreMatch: true,
+      deletedFile: recycleMatch.deletedFile,
+      collectionDeleted: recycleMatch.collectionDeleted,
+      collection: recycleMatch.collection
     };
   }
 
@@ -2501,59 +2268,29 @@ async function upsertFileAssetsAndRelations({
   file,
   chunks = [],
   createdChunks = [],
-  parsedDocx = null,
-  parsedPdf = null,
+  enrichedParseDocument = null,
   transaction
 }) {
   if (!file) return;
-  const docxAssets = (parsedDocx && Array.isArray(parsedDocx.images))
-    ? parsedDocx.images
-      .map((image) => ({
-        assetKey: String(image.imageKey || '').trim(),
-        assetType: 'image',
-        contentType: image.contentType || '',
-        base64: image.base64 || '',
-        text: '',
-        sha256: image.sha256 || null,
-        byteLength: Number(image.byteLength || 0),
-        sourceRef: String(image.imageKey || '').trim(),
-        sourcePageNo: null,
-        width: null,
-        height: null,
-        meta: {
-          parser: 'docx_python_docx',
-          byteLength: Number(image.byteLength || 0)
-        }
-      }))
-      .filter((item) => item.assetKey && item.base64)
-    : [];
-  const pdfAssets = (parsedPdf && Array.isArray(parsedPdf.assets))
-    ? parsedPdf.assets
-      .map((asset) => ({
-        assetKey: String(asset.assetKey || '').trim(),
-        assetType: String(asset.assetType || 'image'),
-        contentType: asset.contentType || '',
-        base64: asset.base64 || '',
-        text: String(asset.text || ''),
-        sha256: asset.sha256 || null,
-        byteLength: Number(asset.byteLength || 0),
-        sourceRef: String(asset.sourceRef || asset.assetKey || '').trim(),
-        sourcePageNo: Number(asset.sourcePageNo || 0) || null,
-        width: Number(asset.width || 0) || null,
-        height: Number(asset.height || 0) || null,
-        meta: {
-          ...(asset.meta || {}),
-          parser: 'pdf_parse'
-        }
-      }))
-      .filter((item) => item.assetKey && (item.base64 || item.text))
-    : [];
-  const sourceAssets = [...docxAssets, ...pdfAssets];
-  if (!sourceAssets.length) return;
-
-  const storageConfig = buildStorageConfig();
-  const assetsDir = path.resolve(kbStorage.LOCAL_DIR, 'assets');
-  await fs.mkdir(assetsDir, { recursive: true });
+  const rows = [];
+  if (enrichedParseDocument && Array.isArray(enrichedParseDocument.assets)) {
+    enrichedParseDocument.assets.forEach((a) => {
+      if (!a || typeof a !== 'object') return;
+      const assetKey = String(a.id || '').trim();
+      const storageUri = String(a.storageUri || '').trim();
+      if (!assetKey || !storageUri) return;
+      const kind = String(a.kind || 'image').toLowerCase();
+      rows.push({
+        assetKey,
+        assetType: kind === 'table' ? 'table' : 'image',
+        storageUri,
+        mimeType: String(a.mimeType || '').trim(),
+        sourceRef: assetKey,
+        metaJson: { source: 'parseDocument' }
+      });
+    });
+  }
+  if (!rows.length) return;
 
   const existingAssets = await KbAsset.findAll({
     where: { fileId: file.id },
@@ -2577,43 +2314,16 @@ async function upsertFileAssetsAndRelations({
   }
 
   const assetKeyToAssetId = new Map();
-  for (const asset of sourceAssets) {
-    const assetKey = String(asset.assetKey || '').trim();
-    if (!assetKey) continue;
-    const payloadBuffer = asset.base64
-      ? Buffer.from(String(asset.base64), 'base64')
-      : Buffer.from(String(asset.text || ''), 'utf8');
-    const ext = path.extname(assetKey) || (String(asset.assetType || '') === 'table' ? '.txt' : '.bin');
-    const fileName = `${path.basename(file.fileName, path.extname(file.fileName))}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
-    let storageUri = '';
-    if (storageConfig.enabled) {
-      const objectKey = buildUploadObjectKey({
-        collectionId: file.collectionId,
-        fileName
-      });
-      storageUri = await uploadBuffer({
-        buffer: payloadBuffer,
-        objectKey,
-        contentType: asset.contentType || ''
-      });
-    } else {
-      const localPath = path.resolve(assetsDir, fileName);
-      await fs.writeFile(localPath, payloadBuffer);
-      storageUri = `file://${localPath}`;
-    }
+  for (const asset of rows) {
     const created = await KbAsset.create({
       fileId: file.id,
       assetType: asset.assetType || 'image',
-      storageUri,
-      mimeType: asset.contentType || null,
-      assetSha256: asset.sha256 || null,
-      width: asset.width || null,
-      height: asset.height || null,
-      sourcePageNo: asset.sourcePageNo || null,
-      sourceRef: asset.sourceRef || assetKey,
-      metaJson: asset.meta || {}
+      storageUri: asset.storageUri,
+      mimeType: asset.mimeType || null,
+      sourceRef: asset.sourceRef || asset.assetKey,
+      metaJson: asset.metaJson || {}
     }, { transaction });
-    assetKeyToAssetId.set(assetKey, created.id);
+    assetKeyToAssetId.set(asset.assetKey, created.id);
   }
 
   const relationRows = [];
@@ -2674,30 +2384,32 @@ async function getChunkAssetRefMap(chunkIds = []) {
 async function runIngestPipeline({
   fileId,
   kbJobId,
-  rawText = '',
-  parsedDocx = null,
-  parsedXlsx = null,
-  parsedPdf = null,
-  reindexOnly = false
+  reindexOnly = false,
+  pythonChunks = null,
+  enrichedParseDocument = null
 }) {
-  const file = await KbFile.findByPk(fileId);
+  let file = await KbFile.findByPk(fileId);
   const job = await KbJob.findByPk(kbJobId);
-  const collection = file ? await KbCollection.findByPk(file.collectionId) : null;
   if (!file || !job) {
     throw new Error('file_or_job_not_found');
   }
+  await assertKbFileActiveForIngestWithJob(file, job);
   const fileExt = normalizeFileExt(file.fileName, file.fileExt);
-  const cleanedText = cleanTextByType(rawText, fileExt);
+  const parserMeta = resolveIngestParserMeta(fileExt, enrichedParseDocument);
   const collectionTagMap = await getCollectionTagMap([file.collectionId]);
   const normalizedTags = (collectionTagMap.get(file.collectionId) || []).map((tag) => normalizeTag(tag.name)).filter(Boolean);
   const uniqueTags = Array.from(new Set(normalizedTags));
 
-  await job.update({ status: 'processing' });
+  await job.update({ status: 'processing', lastError: null, lastErrorKey: null });
+  file = await KbFile.findByPk(fileId);
+  await assertKbFileActiveForIngestWithJob(file, job);
 
   let chunks = [];
   let createdChunks = [];
   let staleAssetStorageUris = [];
   if (reindexOnly) {
+    file = await KbFile.findByPk(fileId);
+    await assertKbFileActiveForIngestWithJob(file, job);
     await file.update({
       status: 'indexing',
       errorMessageKey: null,
@@ -2721,24 +2433,17 @@ async function runIngestPipeline({
       rowIndex: Number(chunk.metaJson?.rowIndex || 0)
     }));
   } else {
+    file = await KbFile.findByPk(fileId);
+    await assertKbFileActiveForIngestWithJob(file, job);
     await file.update({
       status: 'parsing',
       errorMessageKey: null,
       errorMessage: null
     });
 
-    chunks = (
-      (fileExt === 'docx' && parsedDocx && Array.isArray(parsedDocx.blocks))
-      || (fileExt === 'xlsx' && parsedXlsx && Array.isArray(parsedXlsx.blocks))
-      || (fileExt === 'pdf' && parsedPdf && Array.isArray(parsedPdf.blocks))
-    )
-      ? splitStructuredBlocksToChunks(
-        fileExt === 'docx'
-          ? parsedDocx.blocks
-          : (fileExt === 'xlsx' ? parsedXlsx.blocks : parsedPdf.blocks),
-        800
-      )
-      : splitTextToChunks(cleanedText, { fileExt });
+    chunks = Array.isArray(pythonChunks)
+      ? pythonChunks.map((c) => normalizePythonChunkForIngest(c)).filter((c) => String(c.text || '').trim())
+      : [];
     if (!chunks.length) {
       await file.update({
         status: 'parse_failed',
@@ -2752,6 +2457,9 @@ async function runIngestPipeline({
       });
       throw new Error('text_empty_after_parse');
     }
+
+    file = await KbFile.findByPk(fileId);
+    await assertKbFileActiveForIngestWithJob(file, job);
 
     await sequelize.transaction(async (transaction) => {
       const existingChunks = await KbChunk.findAll({
@@ -2793,6 +2501,11 @@ async function runIngestPipeline({
         replacements: { fileId: file.id },
         transaction
       });
+      // Remove all chunk–asset links for this file's assets (covers orphans and races vs chunkId-only delete).
+      await sequelize.query(
+        'DELETE FROM kb_chunk_asset WHERE asset_id IN (SELECT id FROM kb_asset WHERE file_id = :fileId)',
+        { replacements: { fileId: file.id }, transaction }
+      );
       await KbAsset.destroy({
         where: { fileId: file.id },
         transaction
@@ -2814,27 +2527,9 @@ async function runIngestPipeline({
           endOffset: item.endOffset,
           chunkSha256: sha256(item.text),
           metaJson: {
-            parser:
-              fileExt === 'txt'
-                ? 'txt_v1'
-                : (fileExt === 'docx'
-                  ? 'docx_python_docx_v1'
-                  : (fileExt === 'xlsx'
-                    ? 'xlsx_sheet_v1'
-                    : (fileExt === 'pdf' && parsedPdf && Array.isArray(parsedPdf.blocks) && parsedPdf.blocks.length
-                      ? (String(parsedPdf.parserKind || '').trim() === 'pdf_layout_v1'
-                        ? 'pdf_layout_v1'
-                        : 'pdf_struct_v1')
-                      : (fileExt === 'pdf' ? 'pdf_text_v1' : 'plain_text')))),
-            cleaner: fileExt,
-            version:
-              fileExt === 'docx'
-                ? 6
-                : (fileExt === 'xlsx'
-                  ? 1
-                  : (fileExt === 'pdf' && parsedPdf && Array.isArray(parsedPdf.blocks) && parsedPdf.blocks.length
-                    ? (String(parsedPdf.parserKind || '').trim() === 'pdf_layout_v1' ? 4 : 2)
-                    : (fileExt === 'pdf' ? 1 : 3))),
+            parser: parserMeta.parser,
+            cleaner: parserMeta.cleaner,
+            version: parserMeta.version,
             chunkType: item.chunkType || 'paragraph',
             headingPath: item.headingPath || [],
             assetKeys: item.assetKeys || [],
@@ -2851,8 +2546,7 @@ async function runIngestPipeline({
         file,
         chunks,
         createdChunks,
-        parsedDocx: fileExt === 'docx' ? parsedDocx : null,
-        parsedPdf: fileExt === 'pdf' ? parsedPdf : null,
+        enrichedParseDocument,
         transaction
       });
 
@@ -2893,6 +2587,9 @@ async function runIngestPipeline({
       await KbChunkIndexState.bulkCreate(missingRows, { transaction });
     }
   });
+
+  file = await KbFile.findByPk(fileId);
+  await assertKbFileActiveForIngestWithJob(file, job);
 
   await file.update({ status: 'indexing' });
 
@@ -3250,10 +2947,84 @@ async function rejectTagAlias({ aliasId, user }) {
   return alias;
 }
 
+/**
+ * Remove old completed kb_job rows. Never deletes the latest job per (biz_type, biz_id).
+ * Requires PostgreSQL / MySQL 8+ / MariaDB 10.2+ (window functions).
+ */
+async function purgeExpiredDoneKbJobs(options = {}) {
+  const dialect = sequelize.getDialect();
+  if (!['postgres', 'mysql', 'mariadb'].includes(dialect)) {
+    return { deleted: 0, skipped: true, reason: 'unsupported_dialect' };
+  }
+
+  const daysRaw = Number.parseInt(
+    String(options.retentionDays ?? process.env.KB_JOB_TTL_DONE_DAYS ?? '90'),
+    10
+  );
+  const days = Number.isFinite(daysRaw) && daysRaw >= 1 ? daysRaw : 90;
+
+  const batchRaw = Number.parseInt(
+    String(options.batchLimit ?? process.env.KB_JOB_TTL_BATCH ?? '500'),
+    10
+  );
+  const batch = Math.min(5000, Math.max(50, Number.isFinite(batchRaw) ? batchRaw : 500));
+
+  const maxRoundsRaw = Number.parseInt(
+    String(options.maxRounds ?? process.env.KB_JOB_TTL_MAX_ROUNDS ?? '100'),
+    10
+  );
+  const maxRounds = Number.isFinite(maxRoundsRaw) && maxRoundsRaw >= 1 ? maxRoundsRaw : 100;
+
+  const cutoff = new Date(Date.now() - days * MS_PER_DAY);
+  const selectSql = `
+    SELECT k.id AS id
+    FROM kb_job k
+    INNER JOIN (
+      SELECT id FROM (
+        SELECT id,
+          ROW_NUMBER() OVER (
+            PARTITION BY biz_type, biz_id
+            ORDER BY created_at DESC, id DESC
+          ) AS rn
+        FROM kb_job
+      ) z WHERE z.rn > 1
+    ) x ON k.id = x.id
+    WHERE k.status = :doneStatus
+      AND k.updated_at < :cutoff
+    LIMIT :batch
+  `;
+
+  let totalDeleted = 0;
+  for (let round = 0; round < maxRounds; round += 1) {
+    const rows = await sequelize.query(selectSql, {
+      replacements: {
+        doneStatus: 'done',
+        cutoff,
+        batch
+      },
+      type: QueryTypes.SELECT
+    });
+    const ids = rows.map((r) => r.id).filter((id) => id != null);
+    if (!ids.length) {
+      break;
+    }
+    const deleted = await KbJob.destroy({
+      where: { id: { [Op.in]: ids } }
+    });
+    totalDeleted += deleted;
+    if (ids.length < batch) {
+      break;
+    }
+  }
+
+  return { deleted: totalDeleted, skipped: false };
+}
+
 module.exports = {
   SUPPORTED_EXTS,
   MAX_COLLECTION_TAGS,
   MAX_TAG_LENGTH,
+  INGEST_JOB_ABORT_FILE_DELETED,
   normalizeCollectionTags,
   validateCollectionTags,
   normalizeFileExt,
@@ -3265,6 +3036,7 @@ module.exports = {
   listRecycleBinItems,
   restoreRecycleItems,
   submitRecyclePurgeJobs,
+  enqueueExpiredRecyclePurgeJobs,
   executeRecyclePurgeJob,
   listCollectionFiles,
   listCollectionFilesPaged,
@@ -3282,10 +3054,10 @@ module.exports = {
   retrievalSearch,
   runIngestPipeline,
   runWithBackoffRetry,
-  splitStructuredBlocksToChunks,
   buildVectorChunkContent,
   listStandardTags,
   listTagAliases,
   approveTagAlias,
-  rejectTagAlias
+  rejectTagAlias,
+  purgeExpiredDoneKbJobs
 };

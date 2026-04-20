@@ -3,7 +3,7 @@
     "schemaVersion": "2.0",
     "parseRoute": "native",
     "fileExt": "docx",
-    "parserKind": "docx_python_docx_v2",
+    "parserKind": "docx_python_docx_v3",
     "meta": {
       "pageCount": 1,
       "sourceFileName": "用药说明.docx",

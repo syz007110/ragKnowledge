@@ -1,0 +1,281 @@
+{
+  "parseDocument": {
+    "schemaVersion": "2.0",
+    "parseRoute": "layout",
+    "fileExt": "pdf",
+    "parserKind": "pdf_layout_v1",
+    "meta": {
+      "pageCount": 1,
+      "sourceFileName": "药品说明书.pdf",
+      "warnings": [],
+      "hasBbox": true,
+      "pdfRoute": "layout_primary",
+      "pdfKind": "scanned",
+      "layoutStats": {
+        "pageCount": 1,
+        "blockCount": 5,
+        "tableCount": 1,
+        "formulaCount": 1
+      }
+    },
+    "assets": [
+      {
+        "id": "ast-img-001",
+        "kind": "image",
+        "mimeType": "image/png",
+        "storageUri": ""
+      }
+    ],
+    "pages": [
+      {
+        "pageIndex": 0,
+        "width": 1654,
+        "height": 2339,
+        "blocks": [
+          {
+            "id": "blk-title-1",
+            "type": "title",
+            "readingOrder": 0,
+            "level": 1,
+            "bbox": [160, 120, 980, 210],
+            "layoutLabel": "title",
+            "score": 0.99,
+            "lines": [
+              {
+                "id": "ln-title-1-0",
+                "bbox": [165, 126, 970, 204],
+                "spans": [
+                  {
+                    "id": "sp-title-1-0-0",
+                    "text": "药品使用说明",
+                    "translatable": true,
+                    "style": ["bold"],
+                    "bbox": [170, 130, 965, 200]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "blk-p-1",
+            "type": "paragraph",
+            "readingOrder": 1,
+            "bbox": [160, 260, 1490, 510],
+            "layoutLabel": "text",
+            "score": 0.97,
+            "lines": [
+              {
+                "id": "ln-p-1-0",
+                "bbox": [166, 268, 1480, 328],
+                "spans": [
+                  {
+                    "id": "sp-p-1-0-0",
+                    "text": "本品用于缓解轻度至中度疼痛。",
+                    "translatable": true,
+                    "bbox": [170, 272, 1472, 324]
+                  }
+                ]
+              },
+              {
+                "id": "ln-p-1-1",
+                "bbox": [166, 336, 1480, 498],
+                "spans": [
+                  {
+                    "id": "sp-p-1-1-0",
+                    "text": "成人一次 1 片，一日 2 次，饭后服用。",
+                    "translatable": true,
+                    "bbox": [170, 340, 1472, 492]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "blk-tbl-1",
+            "type": "table",
+            "readingOrder": 2,
+            "bbox": [160, 560, 1490, 980],
+            "layoutLabel": "table",
+            "score": 0.98,
+            "tableHtml": "<table><tr><th>项目</th><th>说明</th></tr><tr><td>剂量</td><td>一次 1 片</td></tr><tr><td>频次</td><td>一日 2 次</td></tr></table>",
+            "blocks": [
+              {
+                "id": "blk-tbl-1-cap",
+                "type": "paragraph",
+                "readingOrder": 0,
+                "lines": [
+                  {
+                    "id": "ln-tbl-cap-1",
+                    "spans": [
+                      {
+                        "id": "sp-tbl-cap-1-0",
+                        "text": "表 1 推荐用法用量",
+                        "translatable": true
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "blk-tbl-1-body",
+                "type": "table",
+                "readingOrder": 1,
+                "rows": [
+                  {
+                    "id": "row-0",
+                    "cells": [
+                      {
+                        "id": "c-0-0",
+                        "spans": [
+                          {
+                            "id": "s-0-0",
+                            "text": "项目",
+                            "translatable": true
+                          }
+                        ]
+                      },
+                      {
+                        "id": "c-0-1",
+                        "spans": [
+                          {
+                            "id": "s-0-1",
+                            "text": "说明",
+                            "translatable": true
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "row-1",
+                    "cells": [
+                      {
+                        "id": "c-1-0",
+                        "spans": [
+                          {
+                            "id": "s-1-0",
+                            "text": "剂量",
+                            "translatable": true
+                          }
+                        ]
+                      },
+                      {
+                        "id": "c-1-1",
+                        "spans": [
+                          {
+                            "id": "s-1-1",
+                            "text": "一次 1 片",
+                            "translatable": true
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "blk-formula-1",
+            "type": "formula",
+            "readingOrder": 3,
+            "bbox": [160, 1040, 980, 1190],
+            "layoutLabel": "equation",
+            "score": 0.95,
+            "formulaLatex": "C(t)=C_0e^{-kt}",
+            "lines": [
+              {
+                "id": "ln-formula-1-0",
+                "spans": [
+                  {
+                    "id": "sp-formula-1-0-0",
+                    "text": "C(t)=C_0e^{-kt}",
+                    "translatable": false
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "blk-fig-1",
+            "type": "figure",
+            "readingOrder": 4,
+            "bbox": [1040, 1040, 1490, 1570],
+            "layoutLabel": "figure",
+            "score": 0.96,
+            "assetRef": "ast-img-001",
+            "blocks": [
+              {
+                "id": "blk-fig-1-cap",
+                "type": "paragraph",
+                "readingOrder": 0,
+                "lines": [
+                  {
+                    "id": "ln-fig-cap-1-0",
+                    "spans": [
+                      {
+                        "id": "sp-fig-cap-1-0-0",
+                        "text": "图 1 药品外包装示意",
+                        "translatable": true
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "chunkView": {
+      "blocks": [
+        {
+          "type": "heading",
+          "level": 1,
+          "text": "药品使用说明"
+        },
+        {
+          "type": "paragraph",
+          "text": "本品用于缓解轻度至中度疼痛。成人一次 1 片，一日 2 次，饭后服用。"
+        },
+        {
+          "type": "table_summary",
+          "text": "表头: 项目 | 说明",
+          "sheetName": "",
+          "tableId": "blk-tbl-1",
+          "rowIndex": 0
+        },
+        {
+          "type": "table_row",
+          "text": "项目: 剂量; 说明: 一次 1 片",
+          "rowKvText": "项目: 剂量; 说明: 一次 1 片",
+          "sheetName": "",
+          "tableId": "blk-tbl-1",
+          "rowIndex": 1
+        },
+        {
+          "type": "paragraph",
+          "text": "C(t)=C_0e^{-kt}"
+        },
+        {
+          "type": "image",
+          "imageKey": "ast-img-001"
+        },
+        {
+          "type": "paragraph",
+          "text": "图 1 药品外包装示意"
+        }
+      ]
+    }
+  },
+  "embeddedImagePayloadsEncoding": "base64",
+  "embeddedImagePayloads": {
+    "ast-img-001": {
+      "id": "ast-img-001",
+      "contentType": "image/png",
+      "byteLength": 67,
+      "sha256": "432ce6b158b4292c72a0b9a3c2d8e1f4a7b0c3d6e9f2a5b8c1d4e7f0a3b6c9d2",
+      "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    }
+  }
+}

@@ -18,6 +18,19 @@ frontend/dist-web/
 frontend/dist-mobile/
 *.log
 
+# document-service Python（venv / 缓存 / 构建产物；依赖以 requirements.txt 为准）
+document-service/.venv/
+document-service/venv/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# document-service PP-Structure native JSON/MD exports
+document-service/exports/
+
 # 运行时数据
 data/
 backend/uploads/

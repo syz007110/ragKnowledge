@@ -36,6 +36,16 @@ module.exports = (sequelize) => sequelize.define('kbFile', {
     allowNull: false,
     field: 'storage_uri'
   },
+  normalizedJsonUri: {
+    type: DataTypes.STRING(500),
+    allowNull: true,
+    field: 'normalized_json_uri'
+  },
+  artifactManifest: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    field: 'artifact_manifest'
+  },
   contentSha256: {
     type: DataTypes.STRING(64),
     allowNull: false,
@@ -52,6 +62,12 @@ module.exports = (sequelize) => sequelize.define('kbFile', {
     allowNull: false,
     defaultValue: 1,
     field: 'version_no'
+  },
+  parseVersion: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 1,
+    field: 'parse_version'
   },
   status: {
     type: DataTypes.STRING(32),

@@ -121,6 +121,7 @@
                   <el-button
                     text
                     class="action-icon-btn"
+                    :disabled="isFileMutatingBusy(row)"
                     :aria-label="t('detail.rebuild')"
                     @click.stop="rebuildFile(row)"
                   >
@@ -128,7 +129,13 @@
                   </el-button>
                 </el-tooltip>
                 <el-tooltip :content="t('detail.rename')" placement="top">
-                  <el-button text class="action-icon-btn" :aria-label="t('detail.rename')" @click.stop="renameFileRow(row)">
+                  <el-button
+                    text
+                    class="action-icon-btn"
+                    :disabled="isFileMutatingBusy(row)"
+                    :aria-label="t('detail.rename')"
+                    @click.stop="renameFileRow(row)"
+                  >
                     <el-icon :size="16"><EditPen /></el-icon>
                   </el-button>
                 </el-tooltip>
@@ -138,7 +145,14 @@
                   </el-button>
                 </el-tooltip>
                 <el-tooltip :content="t('detail.delete')" placement="top">
-                  <el-button text type="danger" class="action-icon-btn" :aria-label="t('detail.delete')" @click.stop="removeFile(row)">
+                  <el-button
+                    text
+                    type="danger"
+                    class="action-icon-btn"
+                    :disabled="isFileMutatingBusy(row)"
+                    :aria-label="t('detail.delete')"
+                    @click.stop="removeFile(row)"
+                  >
                     <el-icon :size="16"><Delete /></el-icon>
                   </el-button>
                 </el-tooltip>
@@ -652,6 +666,10 @@ function mapDisplayStatus(displayStatus) {
   return { type: 'processing', textKey: 'detail.statusProcessing' };
 }
 
+function isFileMutatingBusy(row) {
+  return row?.status === 'waiting' || row?.status === 'processing';
+}
+
 function mapIndexStatus(status) {
   if (status === 'done') return 'success';
   if (status === 'failed') return 'failed';
@@ -698,6 +716,52 @@ async function runWithConcurrency(items, limit, worker) {
     }
   });
   await Promise.all(workers);
+}
+
+/** @returns {Promise<boolean>} true if restore succeeded */
+async function confirmAndRestoreRecycleBinMatch(apiPayload, row) {
+  const deletedFile = apiPayload.deletedFile;
+  const collectionDeleted = Boolean(apiPayload.collectionDeleted);
+  const coll = apiPayload.collection || {};
+  try {
+    if (collectionDeleted) {
+      await ElMessageBox.confirm(
+        t('detail.uploadRecycleRestoreNeedCollection', { name: coll.name || '' }),
+        t('detail.uploadRecycleRestoreTitle'),
+        { type: 'warning', confirmButtonText: t('detail.uploadRecycleRestoreConfirm'), cancelButtonText: t('common.cancel') }
+      );
+      await api.kb.restoreRecycleBin({
+        collectionIds: [Number(coll.id)],
+        fileIds: []
+      });
+    } else {
+      await ElMessageBox.confirm(
+        t('detail.uploadRecycleRestorePrompt', { name: deletedFile?.fileName || '' }),
+        t('detail.uploadRecycleRestoreTitle'),
+        { type: 'warning', confirmButtonText: t('detail.uploadRecycleRestoreConfirm'), cancelButtonText: t('common.cancel') }
+      );
+      await api.kb.restoreRecycleBin({
+        collectionIds: [Number(detail.value.id)],
+        fileIds: [Number(deletedFile.id)]
+      });
+    }
+  } catch (e) {
+    if (e === 'cancel') {
+      updateUploadItem(row.id, {
+        progress: 100,
+        progressStatus: '',
+        stateText: t('detail.uploadRecycleRestoreSkipped')
+      });
+      return false;
+    }
+    throw e;
+  }
+  updateUploadItem(row.id, {
+    progress: 100,
+    progressStatus: 'success',
+    stateText: t('detail.uploadRecycleRestored')
+  });
+  return true;
 }
 
 async function handleFileChange(event) {
@@ -758,6 +822,12 @@ async function handleFileChange(event) {
           return;
         }
 
+        if (initData.recycleRestoreMatch) {
+          const ok = await confirmAndRestoreRecycleBinMatch(initData, row);
+          if (ok) reusedCount += 1;
+          return;
+        }
+
         const uploadUrl = String(initData.uploadUrl || '').trim();
         const objectKey = String(initData.objectKey || '').trim();
         if (!uploadUrl || !objectKey) {
@@ -805,6 +875,12 @@ async function handleFileChange(event) {
           return;
         }
 
+        if (completeData.recycleRestoreMatch) {
+          const ok = await confirmAndRestoreRecycleBinMatch(completeData, row);
+          if (ok) reusedCount += 1;
+          return;
+        }
+
         acceptedCount += 1;
         const taskId = Number(completeData.job?.id || 0);
         if (taskId) activeTaskIds.add(taskId);
@@ -824,9 +900,9 @@ async function handleFileChange(event) {
         });
       }
     });
-    if (failedCount === 0) {
+    if (failedCount === 0 && (acceptedCount > 0 || reusedCount > 0)) {
       ElMessage.success(t('detail.rebuildQueued'));
-    } else {
+    } else if (failedCount > 0) {
       ElMessage.warning(t('detail.uploadSummary', { success: acceptedCount + reusedCount, failed: failedCount }));
     }
     await loadFiles();
@@ -855,26 +931,37 @@ function readFileNameFromHeaders(headers = {}) {
 }
 
 async function rebuildFile(row) {
-  await api.kb.rebuildFile(row.id);
-  ElMessage.success(t('detail.rebuildQueued'));
-  await loadFiles();
+  try {
+    await api.kb.rebuildFile(row.id);
+    ElMessage.success(t('detail.rebuildQueued'));
+    await loadFiles();
+  } catch (error) {
+    const message = error?.response?.data?.message || error.message;
+    if (message) ElMessage.error(message);
+  }
 }
 
 async function renameFileRow(row) {
-  const { value } = await ElMessageBox.prompt(
-    t('detail.renamePrompt'),
-    t('detail.rename'),
-    {
-      inputValue: row.name,
-      confirmButtonText: t('common.confirm'),
-      cancelButtonText: t('common.cancel')
-    }
-  );
-  const nextName = String(value || '').trim();
-  if (!nextName || nextName === row.name) return;
-  await api.kb.renameFile(row.id, { fileName: nextName });
-  ElMessage.success(t('common.success'));
-  await loadFiles();
+  try {
+    const { value } = await ElMessageBox.prompt(
+      t('detail.renamePrompt'),
+      t('detail.rename'),
+      {
+        inputValue: row.name,
+        confirmButtonText: t('common.confirm'),
+        cancelButtonText: t('common.cancel')
+      }
+    );
+    const nextName = String(value || '').trim();
+    if (!nextName || nextName === row.name) return;
+    await api.kb.renameFile(row.id, { fileName: nextName });
+    ElMessage.success(t('common.success'));
+    await loadFiles();
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return;
+    const message = error?.response?.data?.message || error.message;
+    if (message) ElMessage.error(message);
+  }
 }
 
 async function downloadFile(row) {
@@ -894,18 +981,24 @@ async function downloadFile(row) {
 }
 
 async function removeFile(row) {
-  await ElMessageBox.confirm(
-    `${t('detail.deleteConfirm')}: ${row.name}?`,
-    t('detail.delete'),
-    {
-      type: 'warning',
-      confirmButtonText: t('detail.delete'),
-      cancelButtonText: t('common.cancel')
-    }
-  );
-  await api.kb.deleteFile(row.id);
-  ElMessage.success(t('common.success'));
-  await loadFiles();
+  try {
+    await ElMessageBox.confirm(
+      `${t('detail.deleteConfirm')}: ${row.name}?`,
+      t('detail.delete'),
+      {
+        type: 'warning',
+        confirmButtonText: t('detail.delete'),
+        cancelButtonText: t('common.cancel')
+      }
+    );
+    await api.kb.deleteFile(row.id);
+    ElMessage.success(t('common.success'));
+    await loadFiles();
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return;
+    const message = error?.response?.data?.message || error.message;
+    if (message) ElMessage.error(message);
+  }
 }
 
 function setChunkCardRef(id, el) {

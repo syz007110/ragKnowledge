@@ -434,6 +434,17 @@ async function initPresignedUploadItem(req, res, next) {
       });
     }
 
+    if (result.recycleRestoreMatch) {
+      return res.status(200).json({
+        messageKey: 'kb.recycleRestoreMatch',
+        message: req.t('kb.recycleRestoreMatch'),
+        recycleRestoreMatch: true,
+        deletedFile: result.deletedFile,
+        collectionDeleted: result.collectionDeleted,
+        collection: result.collection
+      });
+    }
+
     return res.status(200).json({
       messageKey: 'common.success',
       message: req.t('common.success'),
@@ -559,6 +570,18 @@ async function completePresignedUploadItem(req, res, next) {
       });
     }
 
+    if (result.recycleRestoreMatch) {
+      await deleteObjectByUri(storageUri);
+      return res.status(200).json({
+        messageKey: 'kb.recycleRestoreMatch',
+        message: req.t('kb.recycleRestoreMatch'),
+        recycleRestoreMatch: true,
+        deletedFile: result.deletedFile,
+        collectionDeleted: result.collectionDeleted,
+        collection: result.collection
+      });
+    }
+
     return res.status(202).json({
       messageKey: 'kb.ingestAccepted',
       message: req.t('kb.ingestAccepted'),
@@ -634,6 +657,17 @@ async function createIngestTask(req, res, next) {
         message: req.t('kb.dedupReused'),
         dedupReused: true,
         file: result.file
+      });
+    }
+
+    if (result.recycleRestoreMatch) {
+      return res.status(200).json({
+        messageKey: 'kb.recycleRestoreMatch',
+        message: req.t('kb.recycleRestoreMatch'),
+        recycleRestoreMatch: true,
+        deletedFile: result.deletedFile,
+        collectionDeleted: result.collectionDeleted,
+        collection: result.collection
       });
     }
 
@@ -850,6 +884,7 @@ async function uploadCollectionFiles(req, res, next) {
     const accepted = [];
     const reused = [];
     const failed = [];
+    const recycleRestoreMatches = [];
 
     for (const file of uploadedFiles) {
       const originalName = normalizeUploadFileName(file.originalname) || path.basename(file.path);
@@ -942,6 +977,17 @@ async function uploadCollectionFiles(req, res, next) {
         reused.push({ fileName: originalName, file: result.file });
         continue;
       }
+      if (result.recycleRestoreMatch) {
+        await cleanupStoredUpload(storedUpload);
+        removePendingStoredUpload(pendingStoredUploads, storedUpload);
+        recycleRestoreMatches.push({
+          fileName: originalName,
+          deletedFile: result.deletedFile,
+          collectionDeleted: result.collectionDeleted,
+          collection: result.collection
+        });
+        continue;
+      }
       removePendingStoredUpload(pendingStoredUploads, storedUpload);
       accepted.push({
         fileName: originalName,
@@ -956,7 +1002,8 @@ async function uploadCollectionFiles(req, res, next) {
       message: req.t('kb.ingestAccepted'),
       accepted,
       reused,
-      failed
+      failed,
+      ...(recycleRestoreMatches.length ? { recycleRestoreMatches } : {})
     });
   } catch (error) {
     await Promise.allSettled(pendingStoredUploads.map((item) => cleanupStoredUpload(item)));
@@ -1000,6 +1047,12 @@ async function deleteFileItem(req, res, next) {
       message: req.t('common.success')
     });
   } catch (error) {
+    if (error.message === 'kb.fileBusyProcessing') {
+      return res.status(409).json({
+        messageKey: 'kb.fileBusyProcessing',
+        message: req.t('kb.fileBusyProcessing')
+      });
+    }
     return next(error);
   }
 }
@@ -1022,6 +1075,12 @@ async function rebuildFileItem(req, res, next) {
       queueJobId: result.queueJobId
     });
   } catch (error) {
+    if (error.message === 'kb.fileBusyProcessing') {
+      return res.status(409).json({
+        messageKey: 'kb.fileBusyProcessing',
+        message: req.t('kb.fileBusyProcessing')
+      });
+    }
     return next(error);
   }
 }
@@ -1046,6 +1105,12 @@ async function renameFileItem(req, res, next) {
       file
     });
   } catch (error) {
+    if (error.message === 'kb.fileBusyProcessing') {
+      return res.status(409).json({
+        messageKey: 'kb.fileBusyProcessing',
+        message: req.t('kb.fileBusyProcessing')
+      });
+    }
     if (error.message === 'kb.fileNameDuplicated') {
       return res.status(400).json({ messageKey: 'kb.fileNameDuplicated', message: req.t('kb.fileNameDuplicated') });
     }

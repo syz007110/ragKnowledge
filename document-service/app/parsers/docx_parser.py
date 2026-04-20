@@ -27,7 +27,9 @@ try:
     from docx.oxml.text.paragraph import CT_P
     from docx.opc.constants import RELATIONSHIP_TYPE as RT
     from docx.table import Table
+    from docx.text.hyperlink import Hyperlink as DocxHyperlink
     from docx.text.paragraph import Paragraph
+    from docx.text.run import Run as DocxRun
 except Exception:  # pragma: no cover - optional dependency
     Document = None  # type: ignore[misc, assignment]
     qn = None  # type: ignore[misc, assignment]
@@ -36,8 +38,46 @@ except Exception:  # pragma: no cover - optional dependency
     RT = None  # type: ignore[misc, assignment]
     Table = None  # type: ignore[misc, assignment]
     Paragraph = None  # type: ignore[misc, assignment]
+    DocxHyperlink = None  # type: ignore[misc, assignment]
+    DocxRun = None  # type: ignore[misc, assignment]
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+
+def _iter_docx_runs_doc_order(paragraph: Any) -> Any:
+    """Yield each `w:r` in document order, including runs nested in `w:hyperlink`.
+
+    `paragraph.runs` only returns `w:r` that are direct children of `w:p`; hyperlink text
+    lives in `w:hyperlink/w:r` and would otherwise be omitted from structured blocks.
+    """
+    if not Paragraph or not DocxHyperlink or not DocxRun:
+        return
+    for item in paragraph.iter_inner_content():
+        if isinstance(item, DocxRun):
+            yield item
+        elif isinstance(item, DocxHyperlink):
+            for inner in item.runs:
+                yield inner
+
+
+def _paragraph_has_any_image_from_runs(paragraph: Any, document: Any) -> bool:
+    for run in _iter_docx_runs_doc_order(paragraph):
+        if _images_from_run(document, run):
+            return True
+    return False
+
+
+def _paragraph_should_skip_empty(paragraph: Any, document: Any) -> bool:
+    """True when this paragraph has no extractable text, images, or textbox content."""
+    if (paragraph.text or "").strip():
+        return False
+    if _xml_collect_wt_text(paragraph._element):
+        return False
+    if _paragraph_has_any_image_from_runs(paragraph, document):
+        return False
+    if _paragraph_has_textbox(paragraph):
+        return False
+    return True
 
 
 def _heading_level(paragraph: Any) -> int | None:
@@ -55,6 +95,37 @@ def _heading_level(paragraph: Any) -> int | None:
     m = re.match(r"^标题\s*(\d+)$", name)
     if m:
         return max(1, min(6, int(m.group(1))))
+    return None
+
+
+def _paragraph_style_is_word_toc(paragraph: Any) -> bool:
+    """True when paragraph uses Word built-in TOC / table-of-figures styles (not field detection)."""
+    try:
+        name = (paragraph.style.name or "").strip()
+    except Exception:
+        name = ""
+    if not name:
+        return False
+    if re.match(r"^TOC\s*\d+\s*$", name, re.IGNORECASE):
+        return True
+    if re.match(r"^目录\s*\d+\s*$", name):
+        return True
+    if re.match(r"^图表目录\s*\d+\s*$", name):
+        return True
+    nl = name.casefold()
+    if nl == "toc heading" or nl.startswith("toc heading "):
+        return True
+    if name in ("目录标题", "图表目录标题"):
+        return True
+    return False
+
+
+def _effective_source_region(paragraph: Any, source_region: str | None) -> str | None:
+    """Preserve header/footer/textbox/notes; for body paragraphs, tag Word TOC styles as `toc`."""
+    if source_region:
+        return source_region
+    if _paragraph_style_is_word_toc(paragraph):
+        return "toc"
     return None
 
 
@@ -116,6 +187,7 @@ def _paragraph_blocks(
     source_region: str | None = None,
 ) -> list[dict[str, Any]]:
     blocks: list[dict[str, Any]] = []
+    region = _effective_source_region(paragraph, source_region)
     level = _heading_level(paragraph)
     buf: list[str] = []
 
@@ -124,7 +196,7 @@ def _paragraph_blocks(
         buf.clear()
         if not text:
             return
-        pb = paragraph_block(id_gen, text, next_ro(), source_region=source_region)
+        pb = paragraph_block(id_gen, text, next_ro(), source_region=region)
         if pb:
             blocks.append(pb)
 
@@ -133,11 +205,11 @@ def _paragraph_blocks(
         buf.clear()
         if not text:
             return
-        tb = title_block(id_gen, text, level or 1, next_ro(), source_region=source_region)
+        tb = title_block(id_gen, text, level or 1, next_ro(), source_region=region)
         if tb:
             blocks.append(tb)
 
-    for run in paragraph.runs:
+    for run in _iter_docx_runs_doc_order(paragraph):
         imgs = _images_from_run(document, run)
         if imgs:
             if level is not None:
@@ -146,20 +218,22 @@ def _paragraph_blocks(
                 flush_text_as_paragraph()
             for mime, blob in imgs:
                 aid = _emit_image_asset(mime, blob, id_img=id_img, legacy_images=legacy_images, assets=assets)
-                fb = figure_block_u(id_gen, aid, next_ro(), source_region=source_region)
+                fb = figure_block_u(id_gen, aid, next_ro(), source_region=region)
                 if fb:
                     blocks.append(fb)
         else:
             buf.append(run.text or "")
 
     rest = "".join(buf).strip()
+    if not rest and not _paragraph_has_textbox(paragraph):
+        rest = _xml_collect_wt_text(paragraph._element).strip()
     if rest:
         if level is not None:
-            tb = title_block(id_gen, rest, level, next_ro(), source_region=source_region)
+            tb = title_block(id_gen, rest, level, next_ro(), source_region=region)
             if tb:
                 blocks.append(tb)
         else:
-            pb = paragraph_block(id_gen, rest, next_ro(), source_region=source_region)
+            pb = paragraph_block(id_gen, rest, next_ro(), source_region=region)
             if pb:
                 blocks.append(pb)
     return blocks
@@ -210,12 +284,35 @@ def _textbox_blocks_for_paragraph(
     return out
 
 
-def _table_matrix(table: Any) -> list[list[str]]:
+def _paragraph_visible_text_flat(paragraph: Any, document: Any) -> str:
+    """Visible text for one paragraph: `w:r` in doc order (incl. hyperlink), plus `w:t` XML fallback for fields."""
+    parts: list[str] = []
+    for run in _iter_docx_runs_doc_order(paragraph):
+        if _images_from_run(document, run):
+            continue
+        parts.append(run.text or "")
+    s = "".join(parts).strip()
+    if not s and not _paragraph_has_textbox(paragraph):
+        s = _xml_collect_wt_text(paragraph._element).strip()
+    return s
+
+
+def _cell_visible_text(cell: Any, document: Any) -> str:
+    """Join all paragraphs in a cell with newlines; same extraction as body (hyperlink + field)."""
+    chunks: list[str] = []
+    for para in cell.paragraphs:
+        t = _paragraph_visible_text_flat(para, document)
+        if t:
+            chunks.append(t)
+    return "\n".join(chunks).strip()
+
+
+def _table_matrix(table: Any, document: Any) -> list[list[str]]:
     rows: list[list[str]] = []
     for row in table.rows:
-        cells = [str(cell.text or "").strip() for cell in row.cells]
+        cells = [_cell_visible_text(cell, document) for cell in row.cells]
         rows.append(cells)
-    return [r for r in rows if any(c for c in r)]
+    return [r for r in rows if any(str(c).strip() for c in r)]
 
 
 def _xml_collect_wt_text(element: Any) -> str:
@@ -287,8 +384,8 @@ def _region_for_hdr_ftr(kind: str) -> str:
     return "header"
 
 
-def _hdr_ftr_story_blocks(
-    hdr_ftr: Any,
+def _collect_blocks_from_container_children(
+    container_el: Any,
     document: Any,
     id_gen: IdGen,
     id_img: IdGen,
@@ -296,19 +393,17 @@ def _hdr_ftr_story_blocks(
     assets: list[dict[str, Any]],
     next_ro: Any,
     *,
-    source_region: str,
+    source_region: str | None,
 ) -> list[dict[str, Any]]:
+    """Walk block-level children (`w:p`, `w:tbl`, nested `w:sdt` → `w:sdtContent`)."""
     blocks: list[dict[str, Any]] = []
-    try:
-        root = hdr_ftr._element
-    except Exception:
+    if not qn:
         return blocks
-    for child in root:
+    for child in container_el:
         if isinstance(child, CT_P):
             para = Paragraph(child, document)
-            if not (para.text or "").strip() and not any(_images_from_run(document, r) for r in para.runs):
-                if not _paragraph_has_textbox(para):
-                    continue
+            if _paragraph_should_skip_empty(para, document):
+                continue
             blocks.extend(
                 _paragraph_blocks(
                     para,
@@ -334,13 +429,55 @@ def _hdr_ftr_story_blocks(
             )
         elif isinstance(child, CT_Tbl):
             tbl = Table(child, document)
-            matrix = _table_matrix(tbl)
+            matrix = _table_matrix(tbl, document)
             if not matrix:
                 continue
             tb = table_block_nested(id_gen, matrix, next_ro(), caption=None, source_region=source_region)
             if tb:
                 blocks.append(tb)
+        elif child.tag == qn("w:sdt"):
+            sdt_content = child.find(qn("w:sdtContent"))
+            if sdt_content is not None:
+                blocks.extend(
+                    _collect_blocks_from_container_children(
+                        sdt_content,
+                        document,
+                        id_gen,
+                        id_img,
+                        legacy_images,
+                        assets,
+                        next_ro,
+                        source_region=source_region,
+                    )
+                )
     return blocks
+
+
+def _hdr_ftr_story_blocks(
+    hdr_ftr: Any,
+    document: Any,
+    id_gen: IdGen,
+    id_img: IdGen,
+    legacy_images: list[dict[str, Any]],
+    assets: list[dict[str, Any]],
+    next_ro: Any,
+    *,
+    source_region: str,
+) -> list[dict[str, Any]]:
+    try:
+        root = hdr_ftr._element
+    except Exception:
+        return []
+    return _collect_blocks_from_container_children(
+        root,
+        document,
+        id_gen,
+        id_img,
+        legacy_images,
+        assets,
+        next_ro,
+        source_region=source_region,
+    )
 
 
 class DocxParser(BaseParser):
@@ -398,46 +535,18 @@ class DocxParser(BaseParser):
                     )
                 )
 
-        for child in doc.element.body:
-            if isinstance(child, CT_P):
-                para = Paragraph(child, doc)
-                if (
-                    not (para.text or "").strip()
-                    and not any(_images_from_run(doc, r) for r in para.runs)
-                    and not _paragraph_has_textbox(para)
-                ):
-                    continue
-                page_blocks.extend(
-                    _paragraph_blocks(
-                        para,
-                        doc,
-                        id_gen,
-                        id_img,
-                        legacy_images,
-                        assets,
-                        next_ro,
-                        source_region=None,
-                    )
-                )
-                page_blocks.extend(
-                    _textbox_blocks_for_paragraph(
-                        para,
-                        doc,
-                        id_gen,
-                        id_img,
-                        legacy_images,
-                        assets,
-                        next_ro,
-                    )
-                )
-            elif isinstance(child, CT_Tbl):
-                tbl = Table(child, doc)
-                matrix = _table_matrix(tbl)
-                if not matrix:
-                    continue
-                tb = table_block_nested(id_gen, matrix, next_ro(), caption=None, source_region=None)
-                if tb:
-                    page_blocks.append(tb)
+        page_blocks.extend(
+            _collect_blocks_from_container_children(
+                doc.element.body,
+                doc,
+                id_gen,
+                id_img,
+                legacy_images,
+                assets,
+                next_ro,
+                source_region=None,
+            )
+        )
 
         try:
             fn_part = doc.part.part_related_by(RT.FOOTNOTES)
@@ -468,7 +577,7 @@ class DocxParser(BaseParser):
             )
 
         pages = [{"pageIndex": 0, "blocks": page_blocks}]
-        parser_kind = "docx_python_docx_v2"
+        parser_kind = "docx_python_docx_v3"
         doc_json = assemble_parse_document(
             file_ext="docx",
             parser_kind=parser_kind,

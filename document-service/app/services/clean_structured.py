@@ -6,8 +6,9 @@ from typing import Any
 
 from app.parsers.unified_builders import build_chunk_view
 
-# Regions removed from body stream for default policy (see docs/cleaned-parse-schema.md).
-DEFAULT_DROP_SOURCE_REGIONS: frozenset[str] = frozenset({"header", "footer"})
+# Regions removed from body stream for default policy (see docs/cleaned-parse-schema.example.json).
+# `toc`: paragraphs tagged in DOCX parse via Word built-in TOC / figure-catalog styles (see docx_parser).
+DEFAULT_DROP_SOURCE_REGIONS: frozenset[str] = frozenset({"header", "footer", "toc"})
 
 
 def _region_to_drop(sr: str, drop_regions: frozenset[str]) -> bool:
