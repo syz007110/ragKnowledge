@@ -8,19 +8,19 @@
     "build": "cross-env VUE_APP_TARGET=web vue-cli-service build"
   },
   "dependencies": {
-    "@noble/hashes": "^1.7.1",
     "@element-plus/icons-vue": "^2.1.0",
     "@icon-park/vue-next": "^1.4.2",
+    "@noble/hashes": "^1.7.1",
     "axios": "^1.4.0",
     "docx-preview": "^0.3.2",
     "element-plus": "^2.3.8",
-    "xlsx": "^0.18.5",
     "vue": "^3.3.4",
     "vue-i18n": "^11.3.0",
-    "vue-router": "^4.2.4"
+    "vue-router": "^4.2.4",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@vue/cli-plugin-babel": "^5.0.8",
+    "@vue/cli-plugin-babel": "^5.0.9",
     "@vue/cli-service": "^5.0.8",
     "@vue/compiler-sfc": "^3.3.4",
     "cross-env": "^10.1.0"

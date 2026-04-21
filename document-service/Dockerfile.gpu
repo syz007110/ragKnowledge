@@ -1,0 +1,56 @@
+# 文档服务 GPU 镜像：在 CPU 版基础上安装 Paddle / PaddleX / PaddleOCR（PP-Structure PDF 版面）
+# 构建前请根据主机 NVIDIA 驱动与官方文档选择 PADDLE_WHEEL_INDEX：cu118 / cu126 / cu129 / cu130 等
+# 参考：https://www.paddlepaddle.org.cn/documentation/docs/en/develop/install/pip/linux-pip_en.html
+#
+# apt 访问 deb.debian.org 极慢时：构建传参 DEBIAN_APT_MIRROR_HOST=mirrors.aliyun.com（见根目录 .env / compose）
+# pip 报 pypdf “(from versions: none)” 多为 PyPI 不可达；用 PIP_INDEX_URL 指定镜像（默认清华）
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
+
+ARG DEBIAN_APT_MIRROR_HOST=
+RUN set -ex; \
+    if [ -n "$DEBIAN_APT_MIRROR_HOST" ]; then \
+      for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; do \
+        if [ -f "$f" ]; then \
+          sed -i "s/deb.debian.org/${DEBIAN_APT_MIRROR_HOST}/g" "$f"; \
+          sed -i "s/security.debian.org/${DEBIAN_APT_MIRROR_HOST}/g" "$f"; \
+        fi; \
+      done; \
+    fi; \
+    apt-get -o Acquire::http::Timeout=120 -o Acquire::Retries=5 update \
+    && apt-get install -y --no-install-recommends \
+    build-essential \
+    libgomp1 \
+    libglib2.0-0 \
+    libgl1 \
+    libxml2-dev \
+    libxslt1-dev \
+    libjpeg62-turbo-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt /app/requirements.txt
+
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+# 新版 pip 对 manylinux / wheel 标签更完整；避免 trixie 等环境误走源码编译失败
+RUN pip install --upgrade pip setuptools wheel -i "${PIP_INDEX_URL}" \
+    && pip install --no-cache-dir -r /app/requirements.txt -i "${PIP_INDEX_URL}"
+
+ARG PADDLE_WHEEL_INDEX=cu126
+RUN pip install --no-cache-dir paddlepaddle-gpu==3.3.0 \
+    -i https://www.paddlepaddle.org.cn/packages/stable/${PADDLE_WHEEL_INDEX}/
+
+RUN pip install --no-cache-dir "paddlex[ocr]" paddleocr -i "${PIP_INDEX_URL}"
+
+COPY app /app/app
+COPY config /app/config
+
+EXPOSE 8002
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002"]
